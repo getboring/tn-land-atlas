@@ -1,3 +1,5 @@
+import { validateQuery } from './_validate'
+
 export interface Env {
   SUPABASE_URL: string
   SUPABASE_ANON_KEY: string
@@ -30,9 +32,13 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   } catch {
     return Response.json({ error: 'Invalid JSON' }, { status: 400 })
   }
-  const { parcelKey } = (body ?? {}) as { parcelKey?: string }
-  if (!parcelKey || typeof parcelKey !== 'string') {
-    return Response.json({ error: 'Missing parcelKey' }, { status: 400 })
+  const { parcelKey } = (body ?? {}) as { parcelKey?: unknown }
+  // Reuse the shared validator — same charset/length rules apply to GISLINK
+  // (alphanumerics + spaces). encodeURIComponent below is the second line of
+  // defense; validateQuery is the first.
+  const validKey = validateQuery(parcelKey)
+  if (!validKey) {
+    return Response.json({ error: 'Invalid parcelKey' }, { status: 400 })
   }
 
   const env = context.env
@@ -43,7 +49,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     )
   }
 
-  const k = encodeURIComponent(parcelKey)
+  const k = encodeURIComponent(validKey)
   const [buildings, valuations, sales, propertyEntities] = await Promise.all([
     supabaseSelect<unknown[]>(env, 'buildings', `select=*&parcel_key=eq.${k}`).catch(() => [] as unknown[]),
     supabaseSelect<unknown[]>(env, 'valuations', `select=*&parcel_key=eq.${k}`).catch(() => [] as unknown[]),

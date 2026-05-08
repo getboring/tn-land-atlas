@@ -15,7 +15,7 @@ class of bug that has already been hunted down once. Don't.
 - **Live parcels:** Johnson City ArcGIS REST (`gis.johnsoncitytn.org`)
 - **Enriched data:** Supabase REST, **server-side only**
 - **Lint/format:** Biome is **not** used here — ESLint + typescript-eslint are
-- **Tests:** Playwright (33 tests x 3 viewports)
+- **Tests:** Playwright (~45 tests x 3 viewports for E2E) + Vitest (55+ unit tests for `src/lib/insights.ts`)
 
 This is a Cloudflare-Pages project, not a Workers/D1/Hono/better-auth project.
 Don't suggest migrating to a different shell.
@@ -66,8 +66,8 @@ The `m.on('load' | 'moveend' | 'click', ...)` handlers are registered once
 and live for the map's lifetime. They MUST invoke `loadRef.current(...)` /
 `selectRef.current(...)`, not `loadParcelsForViewport` / `selectParcel`
 directly. Direct calls capture the first render's closure and miss state
-updates (e.g. `activeCounty` changes). The refs are kept current by an
-effect in `ParcelMap.tsx`.
+updates. The refs are kept current by an effect in `ParcelMap.tsx`. Same
+pattern applies to `filtersRef` and `rawParcelsRef` for the filter sheet.
 
 ### 6. tsconfig must include the functions project ref
 `tsconfig.json` MUST reference `tsconfig.functions.json`. Without it,
@@ -76,11 +76,11 @@ TypeScript errors in `functions/` go undetected. The Cloudflare Pages
 deploy bundles `functions/` to JS without type-checking — if the local
 build doesn't check it, nothing does.
 
-### 7. NAIP source is capped at zoom 16
-USGS `USGSImageryOnly` advertises LODs through z23 but has no East-TN
-tiles above z16. The source MUST set `maxzoom: 16` so MapLibre over-zooms
-instead of issuing failing tile requests. Don't bump it. If you switch to
-a different imagery provider, verify zoom coverage with curl probes first.
+### 7. One basemap, no toggle
+The Esri World Imagery raster source is the only basemap. The NAIP toggle
+has been removed (USGS coverage was capped at z16 anyway, leaving a
+confusing UX). If you reintroduce a second basemap, set `bounds` to the
+TN superset and verify zoom coverage with `curl` probes first.
 
 ### 8. Parcels load only at zoom >= 13
 At lower zooms the bbox covers thousands of parcels and the response is too
@@ -129,6 +129,36 @@ add a separate formatter — don't reuse `fmtMoney`.
 `searchParcels` can return up to 2000 features. The list renders the first
 200 and shows a "Showing 200 of N — refine your query" footer. Do not
 remove the cap; rendering 2000 list items kills mobile.
+
+### 16. Insights are pure functions, no hardcoded answers
+Everything in `src/lib/insights.ts` is a deterministic, side-effect-free
+computation over data we already have (ArcGIS attributes ± Supabase
+enrichment). Examples: `pricePerAcre`, `yearsHeld`, `entityKind`,
+`occupancy`, `acreageTier`, `centroid`. Tests live in
+`src/lib/insights.test.ts` (vitest). When you add an indicator: write the
+pure function first, write the test, then wire it into the UI. Never
+hand-roll insight logic inline in `ParcelMap.tsx`.
+
+### 17. Filters are client-side via passesFilters
+The filter sheet runs `passesFilters()` from `insights.ts` against the
+last-loaded `rawParcelsRef.current` snapshot. No extra API hits. Add new
+filter dimensions by extending `ParcelFilterFlags` and adding an AND
+clause in `passesFilters` (with vitest coverage), then add a switch in
+the FilterSheet UI.
+
+### 18. Permalinks round-trip view + selected parcel
+`src/lib/permalink.ts` parses and writes `?lng=&lat=&z=&parcel=`.
+- Map view sync uses `replaceState` (no history pollution per pan/zoom).
+- Selecting / deselecting a parcel updates the URL.
+- Loading with `?parcel=<gislink>` resolves via `GET /api/parcel?key=...`
+  and selects/flies-to in the resolution effect. Don't break this — it's
+  what makes investigations sharable.
+
+### 19. Tests must stay green before claiming done
+- `npm test` (vitest) — 55+ unit tests for insights math
+- `npm run build` — `tsc -b` over app + node + functions project refs
+- `npx eslint .` — zero issues
+- `BASE_URL=<prod> npx playwright test` — 45+ E2E across 3 viewports
 
 ## Soft rules (style, conventions)
 
