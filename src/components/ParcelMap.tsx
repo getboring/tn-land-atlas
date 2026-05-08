@@ -12,6 +12,24 @@ import type { PropertyData } from '@/lib/supabase-queries'
 import { parsePermalink, updateAddressBar, DEFAULT_MAP_VIEW } from '@/lib/permalink'
 import { createDraw, setDrawMode, lineDistanceMeters, formatDistance, type DrawMode } from '@/lib/draw'
 import type { TerraDraw } from 'terra-draw'
+import {
+  pricePerAcre,
+  formatPricePerAcre,
+  yearsHeld,
+  holdingTier,
+  acreageTier,
+  acreageTierLabel,
+  saleToAppraisalRatio,
+  formatRatioPercent,
+  occupancy,
+  outOfState,
+  entityKind,
+  centroid,
+  formatYearsHeld,
+  appleMapsUrl,
+  googleMapsUrl,
+  googleStreetViewUrl,
+} from '@/lib/insights'
 
 const NO_SELECTION: number = -1
 
@@ -386,7 +404,12 @@ export default function ParcelMap() {
     // parcel — from the map or from a result list — closes the list so the
     // detail panel can take over without overlap.
     setSearchResults(null)
-    m.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], f.properties.OBJECTID])
+    // The 'parcels-selected' layer is added on map 'load'. If the user lands
+    // on a permalink and we resolve it before the map is fully loaded, the
+    // layer may not exist yet — guard the filter call.
+    if (m.getLayer('parcels-selected')) {
+      m.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], f.properties.OBJECTID])
+    }
 
     const gislink = f.properties.GISLINK
     // Sync selection to URL.
@@ -475,7 +498,9 @@ export default function ParcelMap() {
   const clearSelection = () => {
     setSelectedParcel(null)
     setEnriched(null)
-    map.current?.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], NO_SELECTION])
+    if (map.current?.getLayer('parcels-selected')) {
+      map.current.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], NO_SELECTION])
+    }
     if (map.current) {
       const c = map.current.getCenter()
       updateAddressBar({
@@ -501,6 +526,25 @@ export default function ParcelMap() {
     loadRef.current = loadParcelsForViewport
     selectRef.current = selectParcel
   }, [loadParcelsForViewport, selectParcel])
+
+  // Re-apply the parcels-selected filter whenever selection or layer-readiness
+  // changes. Without this, a permalink-loaded parcel may not get its yellow
+  // highlight if the map's 'load' event fires after selectParcel runs.
+  useEffect(() => {
+    const m = map.current
+    if (!m) return
+    const id = selectedParcel?.properties.OBJECTID ?? NO_SELECTION
+    const apply = () => {
+      if (m.getLayer('parcels-selected')) {
+        m.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], id])
+      }
+    }
+    if (m.isStyleLoaded() && m.getLayer('parcels-selected')) {
+      apply()
+    } else {
+      m.once('load', apply)
+    }
+  }, [selectedParcel])
 
   // Resolve the initial ?parcel= URL param exactly once. Fly to it and select.
   useEffect(() => {
@@ -779,6 +823,8 @@ export default function ParcelMap() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3 text-xs">
+              <ParcelInsights f={selectedParcel} onSearchOwner={(owner) => { setSearchQuery(owner); doSearch() }} />
+
               {/* Hidden when empty — fields the county doesn't populate
                   (PROPTYPE, SALELABEL, ST_NUM/STREET) drop entirely instead
                   of decorating the panel with permanent dashes. */}
@@ -879,6 +925,126 @@ export default function ParcelMap() {
           <LegendItem color="#a855f7" label="Carter" />
         </Card>
       </div>
+    </div>
+  )
+}
+
+// ParcelInsights renders the computed indicators (badges + math) and the
+// quick actions (Maps / Street View / More by owner). Every line is gated
+// on whether the underlying value computes — nothing here ever shows when
+// the data isn't there.
+function ParcelInsights({
+  f,
+  onSearchOwner,
+}: {
+  f: ParcelFeature
+  onSearchOwner: (owner: string) => void
+}) {
+  const p = f.properties
+  const acres = p.CALC_ACRE
+  const appraisal = p.APPRAISAL
+  const price = p.PRICE
+  const ppa = pricePerAcre(appraisal, acres)
+  const yrs = yearsHeld(p.SALEDATE)
+  const ht = holdingTier(yrs)
+  const at = acreageTier(acres)
+  const occ = occupancy(p)
+  const oos = outOfState(p.STATE)
+  const ent = entityKind(p.OWNER)
+  const ratio = saleToAppraisalRatio(price, appraisal)
+  const c = centroid(f.geometry)
+  const ownerForSearch = (p.OWNER ?? '').split(/\s+/).slice(0, 1).join('').trim()
+
+  const badges: Array<{ label: string; tone: 'amber' | 'blue' | 'rose' | 'gray' }> = []
+  if (occ === 'absentee') badges.push({ label: 'Absentee', tone: 'amber' })
+  if (occ === 'owner-occupied') badges.push({ label: 'Owner-occupied', tone: 'blue' })
+  if (oos && p.STATE) badges.push({ label: `Out-of-state · ${p.STATE.toUpperCase()}`, tone: 'rose' })
+  if (ent) badges.push({ label: `Entity · ${ent.toUpperCase()}`, tone: 'rose' })
+  if (ht && yrs != null) badges.push({ label: `${formatYearsHeld(yrs)} held`, tone: ht === 'generational' || ht === 'long-held' ? 'gray' : 'blue' })
+  if (at) badges.push({ label: acreageTierLabel(at), tone: 'gray' })
+
+  const stats: Array<{ label: string; value: string }> = []
+  if (ppa != null) stats.push({ label: '$/ac', value: formatPricePerAcre(ppa) ?? '' })
+  if (ratio != null) stats.push({ label: 'Sold / appraised', value: formatRatioPercent(ratio) ?? '' })
+
+  const hasAny = badges.length > 0 || stats.length > 0 || c != null
+  if (!hasAny) return null
+
+  return (
+    <div className="-mx-1 px-1 pb-2 space-y-2 border-b border-brand-stone/10">
+      {badges.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {badges.map((b, i) => (
+            <span
+              key={i}
+              className={cn(
+                'px-2 py-0.5 rounded-md text-[10px] font-medium uppercase tracking-wider',
+                b.tone === 'amber' && 'bg-amber-500/15 text-amber-300 border border-amber-500/30',
+                b.tone === 'blue' && 'bg-sky-500/15 text-sky-300 border border-sky-500/30',
+                b.tone === 'rose' && 'bg-rose-500/15 text-rose-300 border border-rose-500/30',
+                b.tone === 'gray' && 'bg-white/5 text-brand-stone border border-brand-stone/20',
+              )}
+            >
+              {b.label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {stats.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {stats.map((s, i) => (
+            <div key={i}>
+              <div className="text-[10px] uppercase tracking-wider text-brand-stone font-medium">{s.label}</div>
+              <div className="text-brand-parchment font-semibold">{s.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(c != null || ownerForSearch) && (
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {c && (
+            <a
+              href={appleMapsUrl(c[0], c[1], p.ADDRESS ?? undefined)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-brand-parchment border border-brand-stone/20 hover:bg-white/10"
+            >
+              Apple Maps
+            </a>
+          )}
+          {c && (
+            <a
+              href={googleMapsUrl(c[0], c[1])}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-brand-parchment border border-brand-stone/20 hover:bg-white/10"
+            >
+              Google Maps
+            </a>
+          )}
+          {c && (
+            <a
+              href={googleStreetViewUrl(c[0], c[1])}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-brand-parchment border border-brand-stone/20 hover:bg-white/10"
+            >
+              Street View
+            </a>
+          )}
+          {ownerForSearch && (
+            <button
+              type="button"
+              onClick={() => onSearchOwner(ownerForSearch)}
+              className="inline-flex items-center justify-center h-9 px-3 rounded-lg text-[11px] font-medium bg-brand-copper/20 text-white border border-brand-copper/40 hover:bg-brand-copper/30"
+            >
+              More by {ownerForSearch}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
