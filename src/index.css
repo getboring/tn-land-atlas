@@ -35,6 +35,35 @@ body {
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { scrollbar-width: none; }
 
-/* MapLibre's top-right controls would otherwise sit underneath our two-row top
-   bar (logo+search, then county pills). Push them below both rows. */
-.maplibregl-ctrl-top-right { top: 6rem !important; }
+
+/* iOS / Android: kill the 300ms tap delay and prevent text selection on
+   double-tap of buttons. This is the 2026 best-practice baseline (a button
+   should never be a text-selection trigger). */
+button,
+[role="button"],
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+button,
+[role="button"] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Visible focus ring for keyboard users. focus-visible avoids showing the
+   ring on click for mouse/touch users. */
+button:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible {
+  outline: 2px solid #d97706;
+  outline-offset: 2px;
+}
+
+/* iOS notch / home indicator. The map shell ignores the inset (it should
+   reach the edges) but interactive UI inside respects it. */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }

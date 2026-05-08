@@ -164,15 +164,15 @@ test.describe('TN Land Atlas', () => {
     await expect(input).toHaveValue('')
   })
 
-  test('base layer toggle switches between Esri and NAIP', async ({ page }) => {
-    const toggle = page.getByRole('button', { name: /^(NAIP|Esri)$/ })
-    await expect(toggle).toBeVisible()
-    const before = await toggle.textContent()
-    await toggle.click()
-    await expect(toggle).not.toHaveText(before ?? '')
+  test('bottom action bar exposes Topo, Tools, Locate, Reset', async ({ page }) => {
+    await expect(page.getByRole('button', { name: /contour lines/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Drawing tools/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Locate me/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Recenter to overview/i })).toBeVisible()
   })
 
-  test('drawing toolbar exposes lasso and ruler', async ({ page }) => {
+  test('Tools popover reveals Lasso and Ruler', async ({ page }) => {
+    await page.getByRole('button', { name: /Drawing tools/i }).click()
     await expect(page.getByRole('button', { name: /Lasso parcels/i })).toBeVisible()
     await expect(page.getByRole('button', { name: /Measure distance/i })).toBeVisible()
   })
@@ -183,21 +183,11 @@ test.describe('TN Land Atlas', () => {
     await expect(toggle).toHaveAttribute('aria-pressed', 'false')
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-pressed', 'true')
-    // Layer visibility flipped to 'visible'
     const vis = await page.evaluate(() => {
       const m = (window as unknown as { __map__?: { getLayoutProperty: (id: string, p: string) => string } }).__map__
       return m?.getLayoutProperty('contour-lines', 'visibility')
     })
     expect(vis).toBe('visible')
-  })
-
-  test('parcel visibility toggle works', async ({ page }) => {
-    const toggle = page.getByRole('button', { name: /^(Hide|Show)$/ })
-    await expect(toggle).toBeVisible()
-    await toggle.click()
-    await expect(page.getByRole('button', { name: 'Show', exact: true })).toBeVisible()
-    await toggle.click()
-    await expect(page.getByRole('button', { name: 'Hide', exact: true })).toBeVisible()
   })
 
   test('zooming in loads parcel polygons', async ({ page }) => {

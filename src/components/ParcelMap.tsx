@@ -6,7 +6,7 @@ import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey, que
 import type { ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Search, X, Layers, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2 } from 'lucide-react'
+import { Search, X, MapPinned, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed } from 'lucide-react'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
 import type { PropertyData } from '@/lib/supabase-queries'
 import { parsePermalink, updateAddressBar, DEFAULT_MAP_VIEW } from '@/lib/permalink'
@@ -87,8 +87,6 @@ export default function ParcelMap() {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<maplibregl.Map | null>(null)
   const [activeCounty, setActiveCounty] = useState<County>('ALL')
-  const [parcelsVisible, setParcelsVisible] = useState(true)
-  const [baseLayer, setBaseLayer] = useState<'esri' | 'naip'>('esri')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedParcel, setSelectedParcel] = useState<ParcelFeature | null>(null)
   const [enriched, setEnriched] = useState<PropertyData | null>(null)
@@ -100,7 +98,9 @@ export default function ParcelMap() {
   const [contoursVisible, setContoursVisible] = useState(false)
   const [drawMode, setDrawModeState] = useState<DrawMode>('idle')
   const [rulerDistance, setRulerDistance] = useState<string | null>(null)
+  const [toolsOpen, setToolsOpen] = useState(false)
   const drawRef = useRef<TerraDraw | null>(null)
+  const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialPermalink = useRef(parsePermalink(window.location.search))
@@ -142,20 +142,9 @@ export default function ParcelMap() {
             attribution:
               'Imagery © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics',
           },
-          'usgs-naip': {
-            type: 'raster',
-            tiles: ['https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}'],
-            tileSize: 256,
-            minzoom: 0,
-            maxzoom: 16,
-            bounds: TN_BOUNDS,
-            attribution:
-              'Imagery © <a href="https://basemap.nationalmap.gov/" target="_blank" rel="noopener">U.S. Geological Survey</a> NAIP',
-          },
         },
         layers: [
           { id: 'esri-imagery', type: 'raster', source: 'esri-imagery', minzoom: 0, maxzoom: 22 },
-          { id: 'usgs-naip', type: 'raster', source: 'usgs-naip', minzoom: 0, maxzoom: 22, layout: { visibility: 'none' } },
         ],
       },
       center: [
@@ -166,9 +155,23 @@ export default function ParcelMap() {
       maxZoom: 19,
     })
 
-    m.addControl(new maplibregl.NavigationControl(), 'top-right')
-    m.addControl(new maplibregl.FullscreenControl(), 'top-right')
-    m.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'top-right')
+    // Native controls go bottom-right above the attribution. The right edge
+    // is reserved for the detail / search-results panel — putting native
+    // controls in the right column at top creates click-through conflicts.
+    // GeolocateControl: fitBoundsOptions.maxZoom defines how close it zooms
+    // when the user activates "find me". Default is the source maxzoom which
+    // would jam the camera all the way in; cap at 17 so the user lands near
+    // their location with a useful amount of context (a few blocks visible).
+    m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right')
+    m.addControl(new maplibregl.ScaleControl({ unit: 'imperial', maxWidth: 120 }), 'bottom-left')
+    const geolocate = new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      fitBoundsOptions: { maxZoom: 17, padding: 80 },
+    })
+    m.addControl(geolocate, 'bottom-right')
+    m.addControl(new maplibregl.FullscreenControl(), 'bottom-right')
+    geolocateRef.current = geolocate
 
     m.on('load', () => {
       // Contour source: vector tiles generated on-the-fly from the DEM raster.
@@ -354,7 +357,6 @@ export default function ParcelMap() {
   }, [])
 
   const loadParcelsForViewport = useCallback(async (m: maplibregl.Map) => {
-    if (!parcelsVisible) return
     const src = m.getSource('parcels') as maplibregl.GeoJSONSource | undefined
     const zoom = m.getZoom()
     if (zoom < 13) {
@@ -378,10 +380,14 @@ export default function ParcelMap() {
     } finally {
       setLoading(false)
     }
-  }, [activeCounty, parcelsVisible])
+  }, [activeCounty])
 
   const selectParcel = useCallback(async (f: ParcelFeature, m: maplibregl.Map) => {
     setSelectedParcel(f)
+    // Detail and search-results live in the same right-side slot. Picking a
+    // parcel — from the map or from a result list — closes the list so the
+    // detail panel can take over without overlap.
+    setSearchResults(null)
     m.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], f.properties.OBJECTID])
 
     const gislink = f.properties.GISLINK
@@ -454,13 +460,6 @@ export default function ParcelMap() {
     setSearchResults(null)
   }, [])
 
-  const toggleBase = () => {
-    const next = baseLayer === 'esri' ? 'naip' : 'esri'
-    setBaseLayer(next)
-    map.current?.setLayoutProperty('esri-imagery', 'visibility', next === 'esri' ? 'visible' : 'none')
-    map.current?.setLayoutProperty('usgs-naip', 'visibility', next === 'naip' ? 'visible' : 'none')
-  }
-
   const toggleContours = () => {
     const next = !contoursVisible
     setContoursVisible(next)
@@ -474,20 +473,6 @@ export default function ParcelMap() {
     if (target === 'idle') setRulerDistance(null)
     setDrawMode(drawRef.current, target)
   }, [drawMode])
-
-  const toggleParcels = () => {
-    const next = !parcelsVisible
-    setParcelsVisible(next)
-    const vis = next ? 'visible' : 'none'
-    map.current?.setLayoutProperty('parcels-fill', 'visibility', vis)
-    map.current?.setLayoutProperty('parcels-line', 'visibility', vis)
-    map.current?.setLayoutProperty('parcels-selected', 'visibility', vis)
-    if (next && map.current) loadParcelsForViewport(map.current)
-    else {
-      const src = map.current?.getSource('parcels') as maplibregl.GeoJSONSource | undefined
-      src?.setData({ type: 'FeatureCollection', features: [] })
-    }
-  }
 
   const clearSelection = () => {
     setSelectedParcel(null)
@@ -559,14 +544,16 @@ export default function ParcelMap() {
       />
 
       {/* Top bar — row 1: logo + search + view controls (always visible).
-          All tap targets are at least 40px tall (WCAG 2.5.5 AA / iOS HIG comfortable). */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2">
+          All tap targets are at least 40px tall (WCAG 2.5.5 AA / iOS HIG comfortable).
+          pointer-events-none on the wrapper so map clicks pass through any
+          empty space between the buttons; pointer-events-auto on each child. */}
+      <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2 pointer-events-none [&>*]:pointer-events-auto safe-top">
         <div
           className="flex items-center gap-2 rounded-xl bg-brand-navy/90 backdrop-blur border border-brand-stone/15 px-3 h-10 shrink-0"
           aria-label="TN Land Atlas"
           title="TN Land Atlas"
         >
-          <Layers className="w-4 h-4 text-brand-copper" />
+          <MapPinned className="w-4 h-4 text-brand-copper" />
           <span className="text-sm font-bold text-white whitespace-nowrap hidden sm:inline">TN Land Atlas</span>
         </div>
 
@@ -599,43 +586,23 @@ export default function ParcelMap() {
             <Search className="w-4 h-4" />
           </Button>
         </div>
-
-        <div className="flex items-center gap-1.5 shrink-0">
-          <Button variant="outline" onClick={toggleParcels} className="h-10 px-2 sm:px-3 text-xs">
-            {parcelsVisible ? 'Hide' : 'Show'}
-          </Button>
-          <Button variant="outline" onClick={toggleBase} className="h-10 px-2 sm:px-3 text-xs">
-            {baseLayer === 'esri' ? 'NAIP' : 'Esri'}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={toggleContours}
-            aria-label={contoursVisible ? 'Hide contour lines' : 'Show contour lines'}
-            aria-pressed={contoursVisible}
-            className={cn('h-10 w-10 px-0', contoursVisible && 'bg-brand-copper border-brand-copper text-white')}
-            title="Topographic contour lines (feet)"
-          >
-            <Mountain className="w-4 h-4" />
-          </Button>
-          <Button variant="outline" onClick={() => map.current?.flyTo({ center: [-82.35, 36.35], zoom: 11 })} aria-label="Recenter" className="h-10 w-10 px-0">
-            <Crosshair className="w-4 h-4" />
-          </Button>
-        </div>
       </div>
 
       {/* Top bar — row 2: county filter pills (horizontally scrollable on mobile) */}
       <div
         role="group"
         aria-label="County filter"
-        className="absolute top-[3.4rem] left-3 right-3 z-10 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide"
+        className="absolute top-[3.4rem] left-3 right-3 z-10 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide pointer-events-none [&>*]:pointer-events-auto"
       >
         {COUNTIES.map((c) => (
           <button
             key={c}
+            type="button"
             onClick={() => setActiveCounty(c)}
             aria-pressed={activeCounty === c}
             className={cn(
-              'px-4 h-9 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap shrink-0',
+              // h-10 = 40px (WCAG 2.5.5 AA, comfortable on touch).
+              'px-4 h-10 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap shrink-0',
               activeCounty === c
                 ? 'bg-brand-copper border-brand-copper text-white'
                 : 'bg-brand-navy/90 backdrop-blur border-brand-stone/20 text-brand-parchment hover:bg-white/10'
@@ -646,69 +613,105 @@ export default function ParcelMap() {
         ))}
       </div>
 
-      {/* Drawing toolbar — vertical stack on the right, below MapLibre's native
-          zoom / fullscreen / geolocate cluster (which sits at top: 6rem).
-          Each button has a navy backdrop so it stays readable over imagery. */}
-      <div
+      {/* Bottom action bar — the menu system. Universal across viewports.
+          Native HTML semantics (<nav role="toolbar">), tap targets >= 48px,
+          backdrop-blur frosted look (iOS / macOS / Material 3 convention),
+          safe-area-inset-bottom respects iOS home indicator. */}
+      <nav
         role="toolbar"
-        aria-label="Drawing tools"
-        className="absolute right-3 top-[14rem] z-10 flex flex-col gap-1.5"
+        aria-label="Map actions"
+        className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none [&>*]:pointer-events-auto safe-bottom"
       >
-        <Button
-          variant="outline"
-          onClick={() => switchDrawMode('lasso')}
-          aria-label="Lasso parcels"
-          aria-pressed={drawMode === 'lasso'}
-          title="Lasso: draw a polygon to find every parcel inside"
-          className={cn(
-            'h-10 w-10 px-0 bg-brand-navy/90 backdrop-blur',
-            drawMode === 'lasso' && 'bg-brand-copper border-brand-copper text-white',
-          )}
-        >
-          <Lasso className="w-4 h-4" />
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => switchDrawMode('ruler')}
-          aria-label="Measure distance"
-          aria-pressed={drawMode === 'ruler'}
-          title="Ruler: draw a line to measure distance"
-          className={cn(
-            'h-10 w-10 px-0 bg-brand-navy/90 backdrop-blur',
-            drawMode === 'ruler' && 'bg-brand-copper border-brand-copper text-white',
-          )}
-        >
-          <Ruler className="w-4 h-4" />
-        </Button>
-        {(drawMode !== 'idle' || rulerDistance) && (
-          <Button
-            variant="outline"
-            onClick={() => switchDrawMode('idle')}
-            aria-label="Cancel drawing"
-            title="Cancel / clear drawing"
-            className="h-10 w-10 px-0 bg-brand-navy/90 backdrop-blur"
-          >
-            <MousePointer2 className="w-4 h-4" />
-          </Button>
-        )}
-      </div>
+        <div className="flex items-center gap-1 rounded-2xl bg-brand-navy/90 backdrop-blur border border-brand-stone/20 p-1 shadow-lg">
+          <ActionBarButton
+            label={contoursVisible ? 'Hide contour lines' : 'Show contour lines'}
+            pressed={contoursVisible}
+            onClick={toggleContours}
+            icon={<Mountain className="w-5 h-5" />}
+            text="Topo"
+          />
+          <ActionBarButton
+            label="Drawing tools"
+            pressed={toolsOpen}
+            onClick={() => setToolsOpen((v) => !v)}
+            icon={<Ruler className="w-5 h-5" />}
+            text="Tools"
+          />
+          <ActionBarButton
+            label="Locate me"
+            onClick={() => geolocateRef.current?.trigger()}
+            icon={<LocateFixed className="w-5 h-5" />}
+            text="Locate"
+          />
+          <ActionBarButton
+            label="Recenter to overview"
+            onClick={() => map.current?.flyTo({ center: [-82.35, 36.35], zoom: 11, essential: true })}
+            icon={<Crosshair className="w-5 h-5" />}
+            text="Reset"
+          />
+        </div>
+      </nav>
 
-      {/* Ruler distance pill */}
+      {/* Tools popover — appears above the bottom bar when Tools is pressed. */}
+      {toolsOpen && (
+        <div
+          role="menu"
+          aria-label="Drawing tools"
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none [&>*]:pointer-events-auto"
+        >
+          <div className="flex items-center gap-1 rounded-2xl bg-brand-navy/95 backdrop-blur border border-brand-stone/20 p-1 shadow-xl">
+            <ActionBarButton
+              label="Lasso parcels"
+              pressed={drawMode === 'lasso'}
+              onClick={() => {
+                switchDrawMode('lasso')
+                setToolsOpen(false)
+              }}
+              icon={<Lasso className="w-5 h-5" />}
+              text="Lasso"
+            />
+            <ActionBarButton
+              label="Measure distance"
+              pressed={drawMode === 'ruler'}
+              onClick={() => {
+                switchDrawMode('ruler')
+                setToolsOpen(false)
+              }}
+              icon={<Ruler className="w-5 h-5" />}
+              text="Ruler"
+            />
+            {(drawMode !== 'idle' || rulerDistance) && (
+              <ActionBarButton
+                label="Cancel drawing"
+                onClick={() => {
+                  switchDrawMode('idle')
+                  setToolsOpen(false)
+                }}
+                icon={<MousePointer2 className="w-5 h-5" />}
+                text="Cancel"
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Ruler distance pill — shown above the bottom bar */}
       {rulerDistance && (
         <div
           role="status"
           aria-live="polite"
-          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-10 px-4 py-2 rounded-full bg-brand-navy/95 border border-brand-copper text-xs text-white"
+          className="absolute bottom-20 right-3 z-10 px-4 py-2 rounded-full bg-brand-navy/95 border border-brand-copper text-xs text-white"
         >
           Ruler: <span className="font-bold">{rulerDistance}</span>
         </div>
       )}
 
-      {/* Search results panel. Appears under the top bar on the LEFT so it
-          doesn't collide with the property detail panel on the right. On
-          mobile it spans the full width. Picking a result closes the list. */}
+      {/* Search results panel. Lives on the RIGHT side at the same slot the
+          property detail panel uses — they're mutually exclusive (selecting a
+          parcel closes the list). On mobile it spans the full width minus the
+          right gutter. */}
       {searchResults !== null && (
-        <div className="absolute top-28 left-3 right-3 sm:right-auto sm:w-96 z-30 max-h-[65vh] flex flex-col">
+        <div className="absolute top-28 right-3 left-3 sm:left-auto sm:w-96 z-30 max-h-[65vh] flex flex-col">
           <Card className="flex flex-col overflow-hidden">
             <CardHeader className="pb-2 flex-row items-center justify-between space-y-0 gap-2">
               <CardTitle className="text-sm">
@@ -777,7 +780,8 @@ export default function ParcelMap() {
           role="status"
           aria-live="polite"
           className={cn(
-            'absolute bottom-6 left-1/2 -translate-x-1/2 z-10 px-4 py-1.5 rounded-full bg-brand-navy/90 border border-brand-stone/20 text-xs',
+            // Sits above the bottom action bar (which is at bottom-3 with h-14).
+            'absolute bottom-24 left-1/2 -translate-x-1/2 z-10 px-4 py-1.5 rounded-full bg-brand-navy/90 border border-brand-stone/20 text-xs pointer-events-none',
             loading ? 'text-white' : 'text-brand-stone',
           )}
         >
@@ -812,20 +816,20 @@ export default function ParcelMap() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3 text-xs">
+              {/* Hidden when empty — fields the county doesn't populate
+                  (PROPTYPE, SALELABEL, ST_NUM/STREET) drop entirely instead
+                  of decorating the panel with permanent dashes. */}
               <DetailField label="Parcel ID" value={selectedParcel.properties.GISLINK} />
               <DetailField label="Owner" value={[selectedParcel.properties.OWNER, selectedParcel.properties.OWNER2].filter(Boolean).join('\n')} />
-              <DetailField label="Address" value={selectedParcel.properties.ADDRESS || `${selectedParcel.properties.ST_NUM ?? ''} ${selectedParcel.properties.STREET ?? ''}`.trim()} />
+              <DetailField label="Address" value={selectedParcel.properties.ADDRESS} />
               <DetailField label="County" value={selectedParcel.properties.COUNTYNAME} />
-              <DetailField label="Acres" value={selectedParcel.properties.CALC_ACRE != null ? `${selectedParcel.properties.CALC_ACRE.toFixed(3)} ac` : '—'} />
-              <DetailField label="Property Type" value={selectedParcel.properties.PROPTYPE} />
+              <DetailField label="Acres" value={selectedParcel.properties.CALC_ACRE != null ? `${selectedParcel.properties.CALC_ACRE.toFixed(3)} ac` : null} />
               <DetailField label="Zoning" value={selectedParcel.properties.ZONING} />
               <DetailField label="Appraised Value" value={fmtMoney(selectedParcel.properties.APPRAISAL)} />
               <DetailField label="Last Sale Price" value={fmtMoney(selectedParcel.properties.PRICE)} />
               <DetailField label="Last Sale Date" value={fmtDate(selectedParcel.properties.SALEDATE)} />
-              <DetailField label="Sale Label" value={selectedParcel.properties.SALELABEL} />
               <DetailField label="Mailing Address" value={selectedParcel.properties.MAILADDR} />
-              <DetailField label="Mail City/ST/ZIP" value={`${selectedParcel.properties.MAILCITY || ''}, ${selectedParcel.properties.STATE || ''} ${selectedParcel.properties.ZIP || ''}`} />
-              <DetailField label="Lat/Lng" value={selectedParcel.properties.LATITUDE != null && selectedParcel.properties.LONGITUDE != null ? `${selectedParcel.properties.LATITUDE.toFixed(6)}, ${selectedParcel.properties.LONGITUDE.toFixed(6)}` : '—'} />
+              <DetailField label="Mail City/ST/ZIP" value={[selectedParcel.properties.MAILCITY, selectedParcel.properties.STATE].filter(Boolean).join(', ') + (selectedParcel.properties.ZIP ? ' ' + selectedParcel.properties.ZIP : '')} />
 
               {enrichLoading && (
                 <div className="py-2 text-brand-stone animate-pulse">Loading enriched data…</div>
@@ -900,10 +904,13 @@ export default function ParcelMap() {
         </div>
       )}
 
-      {/* Legend — hidden on mobile to preserve map space */}
-      <div className="absolute bottom-6 left-3 z-10 hidden sm:block">
-        <Card className="p-3 space-y-1.5">
-          <div className="text-[11px] font-semibold text-white">Counties</div>
+      {/* County color legend — top-left, below the pills, only on tablet+
+          (mobile is too tight). The colors echo the parcel-line/-fill colors
+          so users can read which county each polygon belongs to without
+          tapping. */}
+      <div className="absolute top-28 left-3 z-10 hidden sm:block pointer-events-none">
+        <Card className="p-2.5 space-y-1 pointer-events-auto">
+          <div className="text-[10px] uppercase tracking-wider text-brand-stone font-medium">Counties</div>
           <LegendItem color="#22c55e" label="Sullivan" />
           <LegendItem color="#0ea5e9" label="Washington" />
           <LegendItem color="#a855f7" label="Carter" />
@@ -914,12 +921,50 @@ export default function ParcelMap() {
 }
 
 function DetailField({ label, value }: { label: string; value?: string | number | null }) {
-  const display = value && String(value).trim() ? String(value) : '—'
+  // Don't render rows where the underlying field is empty. Showing rows of `—`
+  // wastes vertical space and obscures the data that does matter.
+  if (value == null || String(value).trim() === '' || String(value).trim() === ',') return null
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wider text-brand-stone font-medium">{label}</div>
-      <div className="text-brand-parchment whitespace-pre-line">{display}</div>
+      <div className="text-brand-parchment whitespace-pre-line">{String(value)}</div>
     </div>
+  )
+}
+
+// Bottom-bar button. 48x48 minimum tap target (Material 3 spec, also exceeds
+// Apple HIG 44pt). Two-line layout (icon + text) so the function is legible
+// at a glance without relying solely on icon recognition.
+function ActionBarButton({
+  label,
+  pressed,
+  onClick,
+  icon,
+  text,
+}: {
+  label: string
+  pressed?: boolean
+  onClick: () => void
+  icon: React.ReactNode
+  text: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={pressed ?? false}
+      title={label}
+      className={cn(
+        'flex flex-col items-center justify-center gap-0.5 min-w-[64px] h-14 px-3 rounded-xl text-[10px] font-medium uppercase tracking-wider transition-colors',
+        pressed
+          ? 'bg-brand-copper text-white'
+          : 'text-brand-parchment hover:bg-white/10 active:bg-white/15',
+      )}
+    >
+      {icon}
+      <span>{text}</span>
+    </button>
   )
 }
 
