@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 // Defer MapLibre, Terra Draw, and maplibre-contour to a separate chunk so the
 // initial HTML / CSS / shell paints fast on slow connections (rural TN, mobile).
@@ -17,8 +18,10 @@ function MapLoadingShell() {
 
 export default function App() {
   return (
-    <Suspense fallback={<MapLoadingShell />}>
-      <ParcelMap />
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense fallback={<MapLoadingShell />}>
+        <ParcelMap />
+      </Suspense>
+    </ErrorBoundary>
   )
 }

@@ -59,8 +59,21 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
   let entities: unknown[] = []
   if (propertyEntities.length > 0) {
-    const entityIds = propertyEntities.map((e) => e.entity_id).join(',')
-    entities = await supabaseSelect<unknown[]>(env, 'entities', `select=*&id=in.(${entityIds})`).catch(() => [] as unknown[])
+    // Defense in depth: validate every id looks like a UUID before
+    // concatenating into the URL. Even though the data comes from our own
+    // Supabase, a compromise of the property_entities table would otherwise
+    // become a way to break out of the URL list.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    const entityIds = propertyEntities
+      .map((e) => e.entity_id)
+      .filter((id): id is string => typeof id === 'string' && UUID_RE.test(id))
+    if (entityIds.length > 0) {
+      entities = await supabaseSelect<unknown[]>(
+        env,
+        'entities',
+        `select=*&id=in.(${entityIds.join(',')})`,
+      ).catch(() => [] as unknown[])
+    }
   }
 
   return Response.json(

@@ -38,7 +38,11 @@ export const onRequestPost: PagesFunction = async (context) => {
   const url = `${ARCGIS_URL}/query?where=${encodeURIComponent(where)}&outFields=${encodeURIComponent(OUT_FIELDS)}&outSR=4326&f=geojson&resultRecordCount=2000`
 
   const res = await fetch(url)
-  if (!res.ok) return Response.json({ error: 'ArcGIS error', status: res.status }, { status: 502 })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    console.error('[search] ArcGIS', res.status, detail.slice(0, 500))
+    return Response.json({ error: 'Upstream error' }, { status: 502 })
+  }
   const data = await res.json()
   return new Response(JSON.stringify(data), {
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60' },

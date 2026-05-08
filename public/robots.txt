@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# API endpoints are not meant for crawling — they require a JSON body anyway,
+# but disallow explicitly so well-behaved crawlers skip them.
+Disallow: /api/
+
+Sitemap: https://tn-land-atlas.pages.dev/sitemap.xml

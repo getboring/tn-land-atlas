@@ -1,0 +1,45 @@
+# Cloudflare Pages reads this file at build time and applies the headers to
+# matching paths. Production hardening for the deployed site.
+
+/*
+  # Force HTTPS for two years; HSTS preload-eligible.
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  # Lock down framing — the site can only be embedded by itself, never by
+  # third-party frames (clickjacking guard).
+  X-Frame-Options: SAMEORIGIN
+  # MIME-sniffing was already covered by Cloudflare; reinforce.
+  X-Content-Type-Options: nosniff
+  # Referer policy — already set by CF; declare explicitly so it survives
+  # any future CF default change.
+  Referrer-Policy: strict-origin-when-cross-origin
+  # Disable browser features we don't use. Tightens the attack surface and
+  # makes it explicit which APIs the page may consume.
+  Permissions-Policy: accelerometer=(), camera=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), geolocation=(self), fullscreen=(self)
+  # Content Security Policy. We allow:
+  #  - script-src 'self' so Vite-built JS can load
+  #  - 'wasm-unsafe-eval' for MapLibre's WebAssembly
+  #  - img-src/data: for inline data URIs MapLibre uses for sprites
+  #  - connect-src to the upstreams the app actually talks to
+  #  - frame-ancestors 'self' is the modern equivalent of X-Frame-Options.
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://gis.johnsoncitytn.org https://server.arcgisonline.com https://basemap.nationalmap.gov https://s3.amazonaws.com https://*.supabase.co https://maps.apple.com https://www.google.com; worker-src 'self' blob:; font-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'
+
+# Tighter caching for hashed JS/CSS (Vite outputs content-hashed filenames).
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# API endpoints — same-origin only. The browser will block cross-origin fetches
+# from third-party sites that try to scrape via JS. Useful even though parcel
+# data is public — protects our CF Workers free-tier budget from being burned
+# by someone embedding the API in a different app.
+/api/*
+  Access-Control-Allow-Origin: https://tn-land-atlas.pages.dev
+  Vary: Origin
+  X-Content-Type-Options: nosniff
+
+# JSON API responses keep their per-route Cache-Control (set in the Function).
+# But never let CDNs cache HTML — the index.html shell points at the latest
+# hashed bundle and must always be fresh.
+/
+  Cache-Control: public, max-age=0, must-revalidate
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate

@@ -32,7 +32,14 @@ export const onRequestPost: PagesFunction = async (context) => {
     const geom = JSON.stringify({ rings: [ring], spatialReference: { wkid: 4326 } })
     const url = `${ARCGIS_URL}/query?where=${encodeURIComponent(where)}&geometry=${encodeURIComponent(geom)}&geometryType=esriGeometryPolygon&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=${encodeURIComponent(OUT_FIELDS)}&outSR=4326&f=geojson&resultRecordCount=2000`
     const res = await fetch(url, { cf: { cacheTtl: 60 } })
-    if (!res.ok) return Response.json({ error: 'ArcGIS error', status: res.status }, { status: 502 })
+    if (!res.ok) {
+      // Log the upstream body for ourselves so a CF Logs Push viewer can see
+      // what ArcGIS actually said. Don't echo the body to the client — could
+      // include internal endpoint details.
+      const detail = await res.text().catch(() => '')
+      console.error('[parcels:polygon] ArcGIS', res.status, detail.slice(0, 500))
+      return Response.json({ error: 'Upstream error' }, { status: 502 })
+    }
     const data = await res.json()
     return new Response(JSON.stringify(data), {
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=30' },
@@ -47,7 +54,9 @@ export const onRequestPost: PagesFunction = async (context) => {
 
   const res = await fetch(url, { cf: { cacheTtl: 300 } })
   if (!res.ok) {
-    return Response.json({ error: 'ArcGIS error', status: res.status }, { status: 502 })
+    const detail = await res.text().catch(() => '')
+    console.error('[parcels:bbox] ArcGIS', res.status, detail.slice(0, 500))
+    return Response.json({ error: 'Upstream error' }, { status: 502 })
   }
   const data = await res.json()
   return new Response(JSON.stringify(data), {
