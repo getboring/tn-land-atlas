@@ -3,13 +3,15 @@
 Parcel mapping for Sullivan, Washington, and Carter counties.
 
 ## Stack
-- Vite 8 + React 19 + TypeScript (strict, project references for app / functions / node)
+- Vite 8 + React 19 + TypeScript strict (project refs for app / node / functions)
 - MapLibre GL JS 5
-- Tailwind CSS v4 + shadcn/ui (Button, Card)
+- maplibre-contour (elevation), terra-draw (lasso/ruler), @watergis/maplibre-gl-export (PDF/PNG)
+- Tailwind CSS v4 + shadcn-style primitives (Button, Card)
 - ArcGIS REST (Johnson City) for live parcel polygons
-- Supabase for enriched property data (server-side only)
+- Supabase REST for enriched data — server-side only via Pages Functions
 - Cloudflare Pages + Pages Functions
-- Playwright for E2E (33 tests across 3 viewports)
+- Playwright (~48 tests x 3 viewports) for E2E
+- Vitest (55 cases) for `src/lib/insights.ts` math
 
 ## Live
 - Prod: https://tn-land-atlas.pages.dev
@@ -18,12 +20,14 @@ Parcel mapping for Sullivan, Washington, and Carter counties.
 
 ## Commands
 ```
-npm run dev                                     Vite only, port 5173
-npm run build                                   tsc -b (app + node + functions) && vite build
-npm run preview                                 preview built bundle
-npm run lint                                    eslint .
-npm run test:e2e                                Playwright (uses webServer in playwright.config)
-BASE_URL=https://tn-land-atlas.pages.dev npm run test:e2e   against prod
+npm run dev                                                   Vite only, port 5173
+npm run build                                                 tsc -b (3 refs) && vite build
+npm run preview                                               serve dist/
+npm run lint                                                  eslint .
+npm test                                                      vitest (insights math)
+npm run test:watch                                            vitest watch
+npm run test:e2e                                              Playwright (uses local webServer)
+BASE_URL=https://tn-land-atlas.pages.dev npm run test:e2e     E2E against prod
 ```
 
 `tsc -b` checks three project refs:
@@ -33,93 +37,138 @@ BASE_URL=https://tn-land-atlas.pages.dev npm run test:e2e   against prod
 
 ## File map
 ```
+public/
+  _headers                   security headers + cache rules
+  _routes.json               bypass SPA fallback for static files
+  robots.txt, sitemap.xml, manifest.json, favicon.svg, og-image.svg
+
 src/
-  App.tsx, main.tsx, index.css
-  components/ParcelMap.tsx       main map + sidebar + top bar
-  components/ui/{button,card}.tsx
+  App.tsx                    <ErrorBoundary><Suspense><ParcelMap /></...
+  main.tsx, index.css
+  components/
+    ParcelMap.tsx            main map, search, detail panel, bottom action
+                             bar, Tools popover, FilterSheet, ParcelInsights
+    ErrorBoundary.tsx        recovery UI on render error
+    ui/{button,card}.tsx
   lib/
-    api.ts                       typed fetch wrappers for /api/*
-    arcgis.ts                    ParcelProperties / ParcelFeature / ParcelCollection types
-    supabase-queries.ts          enriched-data types (no runtime client)
-    utils.ts                     cn(), fmtMoney(), fmtDate()
-  types/global.d.ts              window.__map__ augmentation for E2E
+    api.ts                   typed fetch for /api/*
+    arcgis.ts                ParcelProperties / ParcelFeature / ParcelCollection
+    draw.ts                  Terra Draw lifecycle helpers, haversine ruler
+    insights.ts              pure indicator functions ($/ac, holding, entity, ...)
+    insights.test.ts         55 vitest cases
+    permalink.ts             URL <-> { view, parcelKey } via replaceState
+    supabase-queries.ts      enriched-data types (no runtime client)
+    utils.ts                 cn(), fmtMoney() (handles 0), fmtDate() (handles NaN)
+  types/global.d.ts          window.__map__ for E2E
 functions/api/
-  _validate.ts                   county whitelist, bbox bounds, query charset
-  parcels.ts                     POST -> ArcGIS bbox, 5m edge cache
-  search.ts                      POST -> ArcGIS owner/address/GISLINK LIKE
-  property.ts                    POST -> Supabase parallel reads, 30s cache
-e2e/map.spec.ts                  33 tests x 3 viewports
+  _validate.ts               county / bbox / query / polygon whitelists
+  parcels.ts                 POST -> ArcGIS (bbox or polygon spatial filter)
+  parcel.ts                  GET  -> single feature by GISLINK (permalink resolver)
+  search.ts                  POST -> ArcGIS LIKE on OWNER / ADDRESS / GISLINK
+  property.ts                POST -> Supabase parallel reads (UUID-validated joins)
+e2e/map.spec.ts              48 tests x 3 viewports
 ```
 
-## Search UX
-- Pressing Enter or the search button calls `/api/search` and stores all
-  matched features (up to 2000) in `searchResults` state.
-- A panel slides in below the top bar (left side on desktop, full-width on
-  mobile) listing each match: owner / address / county / acres / parcel ID.
-- Tapping a row -> `pickResult()` -> selects the parcel, flies to its bounds,
-  closes the result panel.
-- The list caps at 200 rendered rows (a footer says "Showing 200 of N");
-  scrolling further isn't useful when the user should refine the query.
-- The search input gets a clear-X button when non-empty and supports Escape
-  to clear + close results.
-- All tap targets in the top bar are ≥40px tall (WCAG 2.5.5 AA / iOS HIG).
-
 ## Architecture notes
-- `lib/api.ts` calls `/api/*` only -- no client-side Supabase fallback.
-  When the Pages project doesn't have `SUPABASE_URL` / `SUPABASE_ANON_KEY` set,
-  `/api/property` returns empty arrays. Map data still renders from ArcGIS.
+
+### Bottom action bar (the menu system)
+Universal across desktop / tablet / mobile. Five buttons (Topo / Tools /
+Filter / Locate / Reset), each 64x56 (exceeds iOS HIG 44pt and Material 3
+48dp). Backdrop-blur frosted look. `safe-area-inset-bottom` clears the
+iOS home indicator.
+
+### Tools popover
+Tapping Tools opens an inline popover above the bar with Lasso (polygon),
+Ruler (line), and a Cancel button (only when there's something to cancel).
+
+### Filter sheet
+Native HTMLDialogElement (`showModal()`) gives focus trap, Escape-to-
+close, and backdrop dismissal for free. Toggles for Entity / Out-of-state
+/ Absentee / Recent sale (≤5y) / Long-held (≥20y) plus a min-acres input.
+All filters AND together and run client-side via `passesFilters()` over
+the last-loaded snapshot — no extra API roundtrips.
+
+### Insights are pure functions
+Every computed indicator (price/ac, years held, owner-occupied, entity
+detection, centroid, distance, ...) lives in `src/lib/insights.ts` as a
+pure function with vitest coverage. The detail panel renders only the
+badges that compute true. Add new indicators by writing the function +
+test, then wiring into ParcelInsights.
+
+### Permalinks
+`src/lib/permalink.ts` parses and writes `?lng=&lat=&z=&parcel=`.
+- Map view sync uses `replaceState` (no history pollution per pan/zoom).
+- Selecting / deselecting a parcel updates the URL.
+- Loading with `?parcel=<gislink>` resolves via `GET /api/parcel?key=...`
+  and selects/flies-to in the resolution effect.
+
+### API hygiene
+- `lib/api.ts` calls `/api/*` only — no client-side Supabase fallback.
 - All API inputs validated at the edge in `functions/api/_validate.ts`:
-  county whitelist, charset/length-bounded query (LIKE wildcards stripped),
-  bbox restricted to a TN superset.
-- Map exposes itself as `window.__map__` for E2E tests only. Typed in
-  `src/types/global.d.ts`. Do not consume in app code.
-- Parcels render only at `zoom >= 13` to keep payloads sane.
-- `moveend` is debounced 250ms before fetching parcels.
+  county whitelist, charset/length query, bbox + polygon bounded to TN
+  superset, ArcGIS query escaped via doubled single quotes.
+- ArcGIS upstream errors get logged with response body via console.error;
+  client gets a generic `502 Upstream error`.
+- `property.ts` validates each `entity_id` from Supabase as a UUID before
+  joining into a URL — defense in depth.
+- Map exposes itself as `window.__map__` for E2E tests only. Don't read
+  in app code.
+- Parcels render only at `zoom >= 13`; `moveend` debounced 250ms.
 - The map's persistent event handlers (load / moveend / click) read
   `loadRef.current` / `selectRef.current` so they always see the latest
-  callback closure, not the one from first render.
+  callback closure.
+
+### Security headers
+Set in `public/_headers` (Cloudflare Pages reads at deploy):
+- HSTS 2y preload
+- CSP with explicit connect-src whitelist of every upstream
+- X-Frame-Options SAMEORIGIN, frame-ancestors 'self'
+- Permissions-Policy locking unused features (mic, camera, USB, ...)
+- Referrer-Policy strict-origin-when-cross-origin
+- /assets/* immutable cache, / and /index.html no-cache
 
 ## Gotchas (load-bearing)
 
 ### MapLibre overrides Tailwind `position: absolute`
-The `.maplibregl-map` class sets `position: relative` at the same specificity
-as Tailwind's `.absolute`. Whichever stylesheet loads later wins, and in this
-build maplibre wins -- collapsing the container to `height: 0`. The map
-appears to "load" (sources, layers, click handlers all work) but the canvas
-only renders ~300px tall.
-
-**Fix:** the map container uses inline `style={{ position: 'absolute', inset: 0 }}`
-(inline always wins over a class rule).
-
-**Guarded by:** the E2E test "map container fills the viewport" -- asserts
-`containerH > viewport * 0.6`.
-
-### USGS NAIP tiles 404 above zoom 16
-`basemap.nationalmap.gov/.../USGSImageryOnly/MapServer` advertises LODs
-through z23 in its tile metadata, but actual coverage for East TN stops at
-z16. The source is pinned `maxzoom: 16` so MapLibre over-zooms instead of
-issuing failing requests.
+The `.maplibregl-map` class sets `position: relative` at the same
+specificity as Tailwind's `.absolute`. The map container uses inline
+`style={{ position: 'absolute', inset: 0 }}` so inline-wins-over-class.
+Don't switch back to className. Guarded by the E2E "map container fills
+the viewport" test.
 
 ### Programmatic `m.fire('click', ...)` is unreliable
-Layer-scoped click handlers (`map.on('click', 'parcels-fill', ...)`) only
-fire reliably from real DOM clicks that go through hit-testing. Programmatic
-`m.fire('click')` works on desktop sometimes and fails on tablet/mobile. E2E
-tests center the map on a parcel centroid then `page.mouse.click()` the
-canvas center.
+Layer-scoped click handlers fire from real DOM clicks, not synthetic
+events. E2E tests center the map on a parcel centroid then call
+`page.mouse.click()` at canvas center.
 
 ### ResizeObserver is required
-`trackResize: true` only watches the window. When the map container itself
-changes size (responsive layout shift, sidebar opening), MapLibre doesn't
-notice. We attach a `ResizeObserver` to the container and call `m.resize()`
-on changes.
+`trackResize: true` only watches the window. When the map container
+itself changes size (responsive layout shift, panel opening), MapLibre
+doesn't notice. We attach a `ResizeObserver` and call `m.resize()`.
 
 ### `wrangler.toml` env shadowing
-Declaring `SUPABASE_URL = ""` under `[env.production.vars]` in wrangler.toml
-shadows the dashboard-set value at deploy time and silently disables enriched
-data. Don't add empty placeholders there. Secrets are dashboard-only.
+Declaring `SUPABASE_URL = ""` under `[env.production.vars]` shadows the
+dashboard-set value at deploy time and silently disables enriched data.
+Don't put secrets in wrangler.toml.
 
-## Roadmap
-- Code-split MapLibre (currently 1.27MB bundle, gzipped 348KB)
-- Drawing tools (lasso, ruler) for field comping
-- Replace NAIP fallback with a different imagery source above z16
-- Add a GET `/api/property/:gislink` for cacheable enrichment
+### MapLibre native control sizes
+Library defaults are 29x29 (below WCAG 2.5.5 AA). `index.css` overrides
+to 40x40 via `.maplibregl-ctrl-group button { width: 40px; height: 40px }`.
+
+### Bottom action bar vs MapLibre native cluster
+Both want the bottom-right of the map. `index.css` pushes
+`.maplibregl-ctrl-bottom-right` to `bottom: 5.5rem` and
+`.maplibregl-ctrl-bottom-left` to `bottom: 0.25rem` so they stack above
+the action bar instead of overlapping.
+
+### iOS Safari auto-zoom on focus
+Inputs with `font-size < 16px` trigger auto-zoom on focus. Search and
+min-acres inputs use `text-base sm:text-sm` — 16px on mobile, 14px on
+tablet+ for density.
+
+## Roadmap (open ideas)
+- Service worker / offline mode for rural-TN field workers
+- Sentry / Cloudflare Web Analytics integration
+- Refactor ParcelMap.tsx into smaller files (currently ~1100 lines, OK but big)
+- More insights from Supabase: building density, sales velocity, deed-book chain
+- Saved searches / favorites (requires auth)

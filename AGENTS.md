@@ -15,7 +15,7 @@ class of bug that has already been hunted down once. Don't.
 - **Live parcels:** Johnson City ArcGIS REST (`gis.johnsoncitytn.org`)
 - **Enriched data:** Supabase REST, **server-side only**
 - **Lint/format:** Biome is **not** used here — ESLint + typescript-eslint are
-- **Tests:** Playwright (~45 tests x 3 viewports for E2E) + Vitest (55+ unit tests for `src/lib/insights.ts`)
+- **Tests:** Playwright (~48 tests x 3 viewports for E2E) + Vitest (55 unit tests for `src/lib/insights.ts`)
 
 This is a Cloudflare-Pages project, not a Workers/D1/Hono/better-auth project.
 Don't suggest migrating to a different shell.
@@ -158,7 +158,36 @@ the FilterSheet UI.
 - `npm test` (vitest) — 55+ unit tests for insights math
 - `npm run build` — `tsc -b` over app + node + functions project refs
 - `npx eslint .` — zero issues
-- `BASE_URL=<prod> npx playwright test` — 45+ E2E across 3 viewports
+- `BASE_URL=<prod> npx playwright test` — 48+ E2E across 3 viewports
+
+### 20. The whole app sits inside an ErrorBoundary
+`App.tsx` wraps `<Suspense>` in `<ErrorBoundary>` (`src/components/ErrorBoundary.tsx`).
+A render error in `ParcelMap` or any descendant shows a recovery UI with a
+Reload button instead of a blank page. Don't remove the wrapper. If you
+add a top-level layout component, keep ErrorBoundary as the outermost
+shell.
+
+### 21. Security headers live in public/_headers
+Cloudflare Pages reads `public/_headers` at deploy and applies the rules
+to matching paths. We set HSTS (2y preload), CSP with an explicit
+`connect-src` whitelist, X-Frame-Options SAMEORIGIN, Permissions-Policy,
+Referrer-Policy, X-Content-Type-Options, plus `/assets/*` immutable
+caching. **If you add a new external upstream the client talks to**
+(new tile source, new API), you MUST add it to the CSP `connect-src`
+whitelist or the browser will block the request silently.
+
+### 22. MapLibre native control sizing override
+`.maplibregl-ctrl-group button` is overridden to 40x40 in `index.css`.
+The library defaults to 29x29 which is below WCAG 2.5.5 AA. Don't remove
+the override. Same file pushes `.maplibregl-ctrl-bottom-right` to
+`bottom: 5.5rem` so the native cluster sits above the bottom action bar
+(a flagged overlap from the visual audit).
+
+### 23. Inputs are 16px on mobile to dodge iOS auto-zoom
+iOS Safari triggers auto-zoom on focus for any text input under 16px.
+The search input and the FilterSheet min-acres input use
+`text-base sm:text-sm` — 16px on mobile (no zoom), 14px on tablet+
+(density). Don't remove the responsive class.
 
 ## Soft rules (style, conventions)
 
