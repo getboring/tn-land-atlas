@@ -19,6 +19,8 @@ import {
   appleMapsUrl,
   googleMapsUrl,
   googleStreetViewUrl,
+  passesFilters,
+  type ParcelFilterFlags,
 } from './insights'
 
 // All tests use a fixed `now` so they don't drift over time. 2026-05-08
@@ -364,6 +366,62 @@ describe('formatYearsHeld', () => {
   it('null in null out', () => {
     expect(formatYearsHeld(null)).toBeNull()
     expect(formatYearsHeld(Number.NaN)).toBeNull()
+  })
+})
+
+describe('passesFilters', () => {
+  const NOW_FILTER = new Date('2026-05-08T00:00:00Z')
+  const baseProps = {
+    OWNER: 'SMITH JOHN A',
+    STATE: 'TN',
+    ADDRESS: '112 FOXHALL CIR',
+    MAILADDR: '500 BROADWAY',
+    CITYNAME: 'BRISTOL',
+    MAILCITY: 'NASHVILLE',
+    CALC_ACRE: 0.5,
+    SALEDATE: '2020-06-01',
+  }
+  const allOff: ParcelFilterFlags = {
+    entityOnly: false,
+    outOfStateOnly: false,
+    absenteeOnly: false,
+    recentSaleOnly: false,
+    longHeldOnly: false,
+    minAcres: null,
+  }
+
+  it('passes when no filters set', () => {
+    expect(passesFilters(baseProps, allOff, NOW_FILTER)).toBe(true)
+  })
+  it('entityOnly excludes individuals', () => {
+    expect(passesFilters(baseProps, { ...allOff, entityOnly: true }, NOW_FILTER)).toBe(false)
+    expect(passesFilters({ ...baseProps, OWNER: 'SMITH LLC' }, { ...allOff, entityOnly: true }, NOW_FILTER)).toBe(true)
+  })
+  it('outOfStateOnly requires state != TN', () => {
+    expect(passesFilters(baseProps, { ...allOff, outOfStateOnly: true }, NOW_FILTER)).toBe(false)
+    expect(passesFilters({ ...baseProps, STATE: 'GA' }, { ...allOff, outOfStateOnly: true }, NOW_FILTER)).toBe(true)
+  })
+  it('absenteeOnly excludes owner-occupied', () => {
+    const oo = { ...baseProps, MAILADDR: '112 FOXHALL CR', MAILCITY: 'BRISTOL', STATE: 'TN' }
+    expect(passesFilters(oo, { ...allOff, absenteeOnly: true }, NOW_FILTER)).toBe(false)
+    expect(passesFilters(baseProps, { ...allOff, absenteeOnly: true }, NOW_FILTER)).toBe(true)
+  })
+  it('minAcres applies a floor', () => {
+    expect(passesFilters(baseProps, { ...allOff, minAcres: 1 }, NOW_FILTER)).toBe(false)
+    expect(passesFilters({ ...baseProps, CALC_ACRE: 5 }, { ...allOff, minAcres: 1 }, NOW_FILTER)).toBe(true)
+  })
+  it('recentSaleOnly excludes sales > 5 yrs', () => {
+    expect(passesFilters({ ...baseProps, SALEDATE: '2010-01-01' }, { ...allOff, recentSaleOnly: true }, NOW_FILTER)).toBe(false)
+    expect(passesFilters({ ...baseProps, SALEDATE: '2024-01-01' }, { ...allOff, recentSaleOnly: true }, NOW_FILTER)).toBe(true)
+  })
+  it('longHeldOnly excludes sales < 20 yrs', () => {
+    expect(passesFilters({ ...baseProps, SALEDATE: '2020-01-01' }, { ...allOff, longHeldOnly: true }, NOW_FILTER)).toBe(false)
+    expect(passesFilters({ ...baseProps, SALEDATE: '1990-01-01' }, { ...allOff, longHeldOnly: true }, NOW_FILTER)).toBe(true)
+  })
+  it('AND combines multiple filters', () => {
+    const f: ParcelFilterFlags = { ...allOff, entityOnly: true, outOfStateOnly: true }
+    expect(passesFilters({ ...baseProps, OWNER: 'SMITH LLC', STATE: 'TN' }, f, NOW_FILTER)).toBe(false)
+    expect(passesFilters({ ...baseProps, OWNER: 'SMITH LLC', STATE: 'GA' }, f, NOW_FILTER)).toBe(true)
   })
 })
 

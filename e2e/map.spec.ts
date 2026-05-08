@@ -162,6 +162,23 @@ test.describe('TN Land Atlas', () => {
     await expect(page.getByRole('button', { name: /Recenter to overview/i })).toBeVisible()
   })
 
+  test('Filter sheet opens and toggles a switch', async ({ page }) => {
+    // Initial label is "Filter" (no active count). After applying one, the
+    // button's accessible name becomes "Filter · 1".
+    const filterBtn = page.getByRole('button', { name: /^Filter(?:\s·\s\d+)?$/ })
+    await filterBtn.click()
+    const heading = page.getByRole('heading', { name: 'Filter parcels' })
+    await expect(heading).toBeVisible()
+    const entitySwitch = page.getByRole('switch', { name: /Entity-owned/i })
+    await expect(entitySwitch).toHaveAttribute('aria-checked', 'false')
+    await entitySwitch.click()
+    await expect(entitySwitch).toHaveAttribute('aria-checked', 'true')
+    await page.getByRole('button', { name: 'Done' }).click()
+    await expect(heading).not.toBeVisible()
+    // Filter button should now show the active count
+    await expect(page.getByRole('button', { name: /Filter · 1/ })).toBeVisible()
+  })
+
   test('Tools popover reveals Lasso and Ruler', async ({ page }) => {
     await page.getByRole('button', { name: /Drawing tools/i }).click()
     await expect(page.getByRole('button', { name: /Lasso parcels/i })).toBeVisible()
@@ -196,7 +213,7 @@ test.describe('TN Land Atlas', () => {
     await loadParcelsAt(page, -82.3534, 36.3134, 16)
     await clickFirstParcel(page)
     await expect(page.getByText('Property Details')).toBeVisible({ timeout: 8000 })
-    await page.locator('button').filter({ has: page.locator('svg.lucide-x') }).click()
+    await page.getByRole('button', { name: 'Close property details' }).click()
     await expect(page.getByText('Property Details')).not.toBeVisible()
   })
 

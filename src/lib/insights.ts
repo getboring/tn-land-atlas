@@ -262,6 +262,44 @@ export function formatRatioPercent(ratio: number | null): string | null {
 }
 
 // ----------------------------------------------------------------------------
+// passesFilters — does a parcel feature match a set of computed filter flags?
+// All flags are AND'd together; an unset flag is a pass.
+// `now` is injected so the recent/long-held checks are testable.
+// ----------------------------------------------------------------------------
+
+export interface ParcelFilterFlags {
+  entityOnly: boolean
+  outOfStateOnly: boolean
+  absenteeOnly: boolean
+  recentSaleOnly: boolean
+  longHeldOnly: boolean
+  minAcres: number | null
+}
+
+const RECENT_SALE_YRS = 5
+const LONG_HELD_YRS = 20
+
+export function passesFilters(
+  p: Pick<ParcelProperties, 'OWNER' | 'STATE' | 'ADDRESS' | 'MAILADDR' | 'CITYNAME' | 'MAILCITY' | 'CALC_ACRE' | 'SALEDATE'>,
+  f: ParcelFilterFlags,
+  now: Date = new Date(),
+): boolean {
+  if (f.entityOnly && entityKind(p.OWNER) == null) return false
+  if (f.outOfStateOnly && !outOfState(p.STATE)) return false
+  if (f.absenteeOnly && occupancy(p) !== 'absentee') return false
+  if (f.minAcres != null && f.minAcres > 0) {
+    if (!p.CALC_ACRE || p.CALC_ACRE < f.minAcres) return false
+  }
+  if (f.recentSaleOnly || f.longHeldOnly) {
+    const yrs = yearsHeld(p.SALEDATE, now)
+    if (yrs == null) return false
+    if (f.recentSaleOnly && yrs > RECENT_SALE_YRS) return false
+    if (f.longHeldOnly && yrs < LONG_HELD_YRS) return false
+  }
+  return true
+}
+
+// ----------------------------------------------------------------------------
 // External map deeplinks — meet the user's "open in Maps / Street View" need.
 // ----------------------------------------------------------------------------
 export function appleMapsUrl(lng: number, lat: number, label?: string): string {

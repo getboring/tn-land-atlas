@@ -6,7 +6,7 @@ import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey, que
 import type { ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Search, X, MapPinned, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed } from 'lucide-react'
+import { Search, X, MapPinned, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter } from 'lucide-react'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
 import type { PropertyData } from '@/lib/supabase-queries'
 import { parsePermalink, updateAddressBar, DEFAULT_MAP_VIEW } from '@/lib/permalink'
@@ -29,6 +29,7 @@ import {
   appleMapsUrl,
   googleMapsUrl,
   googleStreetViewUrl,
+  passesFilters,
 } from '@/lib/insights'
 
 const NO_SELECTION: number = -1
@@ -103,6 +104,55 @@ function unionBounds(features: ParcelFeature[]): Bounds | null {
 // doesn't expose it — turning off 2 of 3 counties was never a real workflow.
 const COUNTY_ALL = 'ALL' as const
 
+// Client-side filters applied via MapLibre filter expressions on the loaded
+// parcel features. No extra API hits — this is purely "narrow what's already
+// rendered." Each flag is conditional and falls back to a constant `true`
+// expression when off, so the combined filter is effectively no-op.
+interface ParcelFilters {
+  entityOnly: boolean
+  outOfStateOnly: boolean
+  absenteeOnly: boolean
+  recentSaleOnly: boolean
+  longHeldOnly: boolean
+  minAcres: number | null
+}
+
+const emptyFilters: ParcelFilters = {
+  entityOnly: false,
+  outOfStateOnly: false,
+  absenteeOnly: false,
+  recentSaleOnly: false,
+  longHeldOnly: false,
+  minAcres: null,
+}
+
+function applyClientFilters(
+  data: GeoJSON.FeatureCollection,
+  f: ParcelFilters,
+): GeoJSON.FeatureCollection {
+  const active =
+    f.entityOnly || f.outOfStateOnly || f.absenteeOnly || f.recentSaleOnly || f.longHeldOnly || (f.minAcres != null && f.minAcres > 0)
+  if (!active) return data
+  return {
+    type: 'FeatureCollection',
+    features: data.features.filter((feat) => {
+      const props = (feat as ParcelFeature).properties
+      return passesFilters(props, f)
+    }),
+  }
+}
+
+function filtersActiveCount(f: ParcelFilters): number {
+  let n = 0
+  if (f.entityOnly) n++
+  if (f.outOfStateOnly) n++
+  if (f.absenteeOnly) n++
+  if (f.recentSaleOnly) n++
+  if (f.longHeldOnly) n++
+  if (f.minAcres != null && f.minAcres > 0) n++
+  return n
+}
+
 export default function ParcelMap() {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<maplibregl.Map | null>(null)
@@ -118,9 +168,15 @@ export default function ParcelMap() {
   const [drawMode, setDrawModeState] = useState<DrawMode>('idle')
   const [rulerDistance, setRulerDistance] = useState<string | null>(null)
   const [toolsOpen, setToolsOpen] = useState(false)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [filters, setFilters] = useState<ParcelFilters>(emptyFilters)
   const drawRef = useRef<TerraDraw | null>(null)
   const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // Last-loaded full feature collection from the API. Filters operate on this
+  // in-memory snapshot so toggling a filter is instant — no API roundtrip.
+  const rawParcelsRef = useRef<GeoJSON.FeatureCollection | null>(null)
+  const filtersRef = useRef<ParcelFilters>(emptyFilters)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialPermalink = useRef(parsePermalink(window.location.search))
   // Refs to the latest callbacks so the long-lived map event handlers
@@ -332,10 +388,12 @@ export default function ParcelMap() {
             setLoading(true)
             try {
               const data = await queryParcelsInPolygon(ring, COUNTY_ALL)
-              setSearchResults((data.features ?? []) as ParcelFeature[])
+              rawParcelsRef.current = data as GeoJSON.FeatureCollection
+              const filtered = applyClientFilters(data as GeoJSON.FeatureCollection, filtersRef.current)
+              setSearchResults(filtered.features as ParcelFeature[])
               const src = m.getSource('parcels') as maplibregl.GeoJSONSource | undefined
-              src?.setData(data as GeoJSON.FeatureCollection)
-              setParcelCount(data.features?.length ?? 0)
+              src?.setData(filtered)
+              setParcelCount(filtered.features.length)
             } catch (e) {
               console.error('[lasso] failed', e)
               setSearchResults([])
@@ -386,8 +444,10 @@ export default function ParcelMap() {
     setLoading(true)
     try {
       const data = await queryParcelsByBbox(b.getWest(), b.getSouth(), b.getEast(), b.getNorth(), COUNTY_ALL, abortRef.current.signal)
-      src?.setData(data as GeoJSON.FeatureCollection)
-      setParcelCount(data.features?.length || 0)
+      rawParcelsRef.current = data as GeoJSON.FeatureCollection
+      const filtered = applyClientFilters(data as GeoJSON.FeatureCollection, filtersRef.current)
+      src?.setData(filtered)
+      setParcelCount(filtered.features.length)
     } catch (e) {
       if (!isAbortError(e)) {
         console.error('[parcels] viewport load failed', e)
@@ -446,13 +506,14 @@ export default function ParcelMap() {
     setLoading(true)
     try {
       const data = await searchParcels(q, COUNTY_ALL)
-      const features = (data.features ?? []) as ParcelFeature[]
+      rawParcelsRef.current = data as GeoJSON.FeatureCollection
+      const filtered = applyClientFilters(data as GeoJSON.FeatureCollection, filtersRef.current)
+      const features = filtered.features as ParcelFeature[]
       setSearchResults(features)
       if (features.length > 0) {
         const src = map.current.getSource('parcels') as maplibregl.GeoJSONSource | undefined
-        src?.setData(data as GeoJSON.FeatureCollection)
+        src?.setData(filtered)
         setParcelCount(features.length)
-        // Frame all matches so the user can see where they are.
         const b = unionBounds(features)
         if (b) map.current.fitBounds(b, { padding: 80, maxZoom: 17 })
       }
@@ -526,6 +587,18 @@ export default function ParcelMap() {
     loadRef.current = loadParcelsForViewport
     selectRef.current = selectParcel
   }, [loadParcelsForViewport, selectParcel])
+
+  // Re-apply client-side filters when the user toggles them. Operates on the
+  // last-loaded raw feature collection — instant, no API roundtrip.
+  useEffect(() => {
+    filtersRef.current = filters
+    const m = map.current
+    if (!m || !rawParcelsRef.current) return
+    const filtered = applyClientFilters(rawParcelsRef.current, filters)
+    const src = m.getSource('parcels') as maplibregl.GeoJSONSource | undefined
+    src?.setData(filtered)
+    setParcelCount(filtered.features.length)
+  }, [filters])
 
   // Re-apply the parcels-selected filter whenever selection or layer-readiness
   // changes. Without this, a permalink-loaded parcel may not get its yellow
@@ -646,6 +719,13 @@ export default function ParcelMap() {
             text="Tools"
           />
           <ActionBarButton
+            label={filtersActiveCount(filters) > 0 ? `Filter · ${filtersActiveCount(filters)}` : 'Filter'}
+            pressed={filtersActiveCount(filters) > 0 || filterOpen}
+            onClick={() => setFilterOpen(true)}
+            icon={<Filter className="w-5 h-5" />}
+            text={filtersActiveCount(filters) > 0 ? `Filter · ${filtersActiveCount(filters)}` : 'Filter'}
+          />
+          <ActionBarButton
             label="Locate me"
             onClick={() => geolocateRef.current?.trigger()}
             icon={<LocateFixed className="w-5 h-5" />}
@@ -702,6 +782,17 @@ export default function ParcelMap() {
           </div>
         </div>
       )}
+
+      {/* Filter sheet — bottom-sheet dialog driven by computed insights.
+          Uses a native HTMLDialogElement for built-in modal behavior +
+          Escape-to-close. Filters are AND'd; toggling them re-runs the
+          last-loaded data through passesFilters() in-memory. */}
+      <FilterSheet
+        open={filterOpen}
+        filters={filters}
+        onChange={setFilters}
+        onClose={() => setFilterOpen(false)}
+      />
 
       {/* Ruler distance pill — shown above the bottom bar */}
       {rulerDistance && (
@@ -926,6 +1017,150 @@ export default function ParcelMap() {
         </Card>
       </div>
     </div>
+  )
+}
+
+// FilterSheet — native HTMLDialogElement with bottom-sheet styling. Native
+// modality gives us built-in focus trapping, Escape-to-close, and the
+// inert-backdrop semantics for free.
+function FilterSheet({
+  open,
+  filters,
+  onChange,
+  onClose,
+}: {
+  open: boolean
+  filters: ParcelFilters
+  onChange: (next: ParcelFilters) => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const d = ref.current
+    if (!d) return
+    if (open && !d.open) d.showModal()
+    if (!open && d.open) d.close()
+  }, [open])
+
+  const toggle = (key: keyof ParcelFilters) => () => {
+    if (key === 'minAcres') return // handled separately
+    onChange({ ...filters, [key]: !filters[key] })
+  }
+
+  const reset = () => onChange(emptyFilters)
+
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      onClick={(e) => {
+        // light dismiss — click outside the sheet content closes
+        if (e.target === ref.current) onClose()
+      }}
+      className="m-0 ml-auto mr-auto mb-0 sm:mb-auto sm:mt-auto p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full sm:w-96 max-h-[85vh] rounded-t-2xl sm:rounded-2xl"
+    >
+      <div className="bg-brand-navy/95 border border-brand-stone/20 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-brand-stone/15">
+          <h2 className="text-sm font-semibold text-white">Filter parcels</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close filters"
+            className="inline-flex items-center justify-center w-10 h-10 rounded-md text-brand-stone hover:text-white hover:bg-white/10"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-3 space-y-1">
+          <FilterToggle label="Entity-owned (LLC, INC, TRUST, …)" hint="Detected from owner name" active={filters.entityOnly} onClick={toggle('entityOnly')} />
+          <FilterToggle label="Out-of-state owner" hint="Mailing state ≠ TN" active={filters.outOfStateOnly} onClick={toggle('outOfStateOnly')} />
+          <FilterToggle label="Absentee owner" hint="Parcel address ≠ owner mailing" active={filters.absenteeOnly} onClick={toggle('absenteeOnly')} />
+          <FilterToggle label="Recent sale (≤ 5 years)" hint="From last sale date" active={filters.recentSaleOnly} onClick={toggle('recentSaleOnly')} />
+          <FilterToggle label="Long-held (≥ 20 years)" hint="From last sale date" active={filters.longHeldOnly} onClick={toggle('longHeldOnly')} />
+
+          <div className="pt-2">
+            <label className="block text-[11px] uppercase tracking-wider text-brand-stone font-medium mb-1.5">Minimum acres</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                step={0.25}
+                value={filters.minAcres ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value
+                  onChange({ ...filters, minAcres: v === '' ? null : Number(v) })
+                }}
+                placeholder="any"
+                className="flex-1 bg-white/5 border border-brand-stone/20 text-white text-sm px-3 h-10 rounded-lg outline-none focus:border-brand-copper"
+              />
+              <span className="text-xs text-brand-stone">ac</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-brand-stone/15 bg-brand-navy">
+          <button
+            type="button"
+            onClick={reset}
+            className="text-xs text-brand-stone hover:text-white px-3 h-10 rounded-lg"
+          >
+            Reset all
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-xs font-medium text-white bg-brand-copper hover:bg-brand-copper/90 px-4 h-10 rounded-lg"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </dialog>
+  )
+}
+
+function FilterToggle({
+  label,
+  hint,
+  active,
+  onClick,
+}: {
+  label: string
+  hint?: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      role="switch"
+      aria-checked={active}
+      className={cn(
+        'w-full flex items-center justify-between gap-3 px-3 h-12 rounded-lg text-left transition-colors',
+        active ? 'bg-brand-copper/20' : 'hover:bg-white/5',
+      )}
+    >
+      <div>
+        <div className="text-sm text-brand-parchment">{label}</div>
+        {hint && <div className="text-[10px] text-brand-stone">{hint}</div>}
+      </div>
+      <span
+        className={cn(
+          'inline-flex items-center w-11 h-6 rounded-full border transition-colors shrink-0',
+          active ? 'bg-brand-copper border-brand-copper' : 'bg-white/5 border-brand-stone/30',
+        )}
+        aria-hidden
+      >
+        <span
+          className={cn(
+            'block w-5 h-5 rounded-full bg-white shadow transition-transform',
+            active ? 'translate-x-5' : 'translate-x-0.5',
+          )}
+        />
+      </span>
+    </button>
   )
 }
 
