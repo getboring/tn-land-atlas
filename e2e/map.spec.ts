@@ -80,7 +80,7 @@ test.describe('TN Land Atlas', () => {
     await expect(page.getByText(/parcels visible/)).toBeVisible({ timeout: 15000 })
   })
 
-  test.fixme('clicking a parcel opens detail sidebar', async ({ page }) => {
+  test('clicking a parcel opens detail sidebar', async ({ page }) => {
     // Pan to downtown Johnson City and zoom in
     await page.evaluate(() => {
       const map = (window as any).__map__
@@ -93,27 +93,23 @@ test.describe('TN Land Atlas', () => {
     // Wait for parcels to load
     await expect(page.getByText(/parcels visible/)).toBeVisible({ timeout: 15000 })
 
-    // Use page.mouse.click at viewport center (below top bar)
-    const viewportSize = page.viewportSize()
-    if (viewportSize) {
-      const x = viewportSize.width / 2
-      const y = viewportSize.height / 2 + 60
-      await page.mouse.click(x, y)
-      await page.waitForTimeout(2000)
-
-      // If no parcel selected, try another spot
-      const hasDetails = await page.getByText('Property Details').isVisible().catch(() => false)
-      if (!hasDetails) {
-        await page.mouse.click(x + 40, y)
-        await page.waitForTimeout(2000)
+    // Programmatically select first rendered parcel via map API
+    await page.evaluate(() => {
+      const map = (window as any).__map__
+      if (!map) return
+      const features = map.queryRenderedFeatures(undefined, { layers: ['parcels-fill'] })
+      if (features && features.length > 0) {
+        const coords = features[0].geometry.coordinates[0][0]
+        map.fire('click', { lngLat: coords, point: map.project(coords) })
       }
+    })
+    await page.waitForTimeout(1500)
 
-      // Detail sidebar should appear with Property Details
-      await expect(page.getByText('Property Details')).toBeVisible({ timeout: 5000 })
-    }
+    // Detail sidebar should appear with Property Details
+    await expect(page.getByText('Property Details')).toBeVisible({ timeout: 5000 })
   })
 
-  test.fixme('detail sidebar can be closed', async ({ page }) => {
+  test('detail sidebar can be closed', async ({ page }) => {
     // Pan to downtown Johnson City and zoom in
     await page.evaluate(() => {
       const map = (window as any).__map__
@@ -121,31 +117,29 @@ test.describe('TN Land Atlas', () => {
         map.jumpTo({ center: [-82.3534, 36.3134], zoom: 16 })
       }
     })
-    await page.waitForTimeout(4000)
+    await page.waitForTimeout(5000)
 
-    await expect(page.getByText(/parcels visible/)).toBeVisible({ timeout: 15000 })
+    await expect(page.getByText(/parcels visible/)).toBeVisible({ timeout: 20000 })
 
-    const viewportSize = page.viewportSize()
-    if (viewportSize) {
-      const x = viewportSize.width / 2
-      const y = viewportSize.height / 2 + 60
-      await page.mouse.click(x, y)
-      await page.waitForTimeout(2000)
-
-      const hasDetails = await page.getByText('Property Details').isVisible().catch(() => false)
-      if (!hasDetails) {
-        await page.mouse.click(x + 40, y)
-        await page.waitForTimeout(2000)
+    // Programmatically select first rendered parcel
+    await page.evaluate(() => {
+      const map = (window as any).__map__
+      if (!map) return
+      const features = map.queryRenderedFeatures(undefined, { layers: ['parcels-fill'] })
+      if (features && features.length > 0) {
+        const coords = features[0].geometry.coordinates[0][0]
+        map.fire('click', { lngLat: coords, point: map.project(coords) })
       }
+    })
+    await page.waitForTimeout(1500)
 
-      await expect(page.getByText('Property Details')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('Property Details')).toBeVisible({ timeout: 5000 })
 
-      // Close the sidebar using the X button
-      await page.locator('button').filter({ has: page.locator('svg.lucide-x') }).click()
-      await page.waitForTimeout(500)
+    // Close the sidebar using the X button
+    await page.locator('button').filter({ has: page.locator('svg.lucide-x') }).click()
+    await page.waitForTimeout(500)
 
-      await expect(page.getByText('Property Details')).not.toBeVisible()
-    }
+    await expect(page.getByText('Property Details')).not.toBeVisible()
   })
 
   test('responsive layout adapts to viewport', async ({ page }) => {
