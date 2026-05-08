@@ -10,6 +10,7 @@ export default defineConfig({
   use: {
     trace: 'on-first-retry',
     baseURL: process.env.BASE_URL || 'http://localhost:5180',
+    ignoreHTTPSErrors: true,
   },
 
   projects: [
