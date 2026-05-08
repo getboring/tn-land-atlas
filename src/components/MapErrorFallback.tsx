@@ -17,8 +17,8 @@ export function MapErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
     >
       <div className="max-w-sm text-center space-y-5">
         {/* Error icon */}
-        <div className="mx-auto w-12 h-12 rounded-full bg-brand-danger/10 flex items-center justify-center">
-          <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-brand-danger">
+        <div className="mx-auto w-12 h-12 rounded-full bg-brand-error/10 flex items-center justify-center">
+          <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6 text-brand-error">
             <path
               d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
               stroke="currentColor"

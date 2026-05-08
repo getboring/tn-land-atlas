@@ -7,18 +7,62 @@
    ═══════════════════════════════════════════════════════════ */
 
 @theme {
-  /* ── Color: Holston Platform palette ────────────────────── */
-  --color-brand-navy:      #1A2B3C; /* Replaced: was #0f172a */
-  --color-brand-navy-deep: #111D29;
-  --color-brand-navy-light: #1e3a5f; /* Retained — used by Button 'navy' variant */
-  --color-brand-slate:     #3E5C6B;
-  --color-brand-forest:    #2A4A3A;
-  --color-brand-parchment: #F5F0E6; /* Replaced: was #f8fafc */
-  --color-brand-stone:     #D4C9B8; /* Replaced: was #94a3b8 */
-  --color-brand-copper:    #B8732E; /* Replaced: was #d97706 */
+  /* ──────────────────────────────────────────────────────────
+     PALETTE — Holston Platform · Land vertical
+     Hex values are the canonical source of truth. Every
+     semantic alias below resolves to one of these.
+     ──────────────────────────────────────────────────────────
+       navy           #1A2B3C   primary chrome, primary text on parchment
+       navy-deep      #111D29   panels, dark surfaces, app icon background
+       navy-light     #1e3a5f   secondary chrome accent (legacy Button variant)
+       slate          #3E5C6B   secondary text, default parcel line, info
+       forest         #2A4A3A   environmental cues, success-adjacent
+       parchment      #F5F0E6   land base, work surfaces, label halos
+       stone          #D4C9B8   roads, dividers, borders, disabled surfaces
+       copper         #B8732E   selection, primary action, accent
+       copper-bright  #D4882F   hover, focus ring, secondary accent
+       success        #2F6B4F   functional positive
+       warning        #A15C1B   functional caution
+       error          #8F2D2D   functional negative
+       info           #3E5C6B   functional informational (alias to slate)
+     ────────────────────────────────────────────────────────── */
+
+  /* Brand tokens (canonical) */
+  --color-brand-navy:          #1A2B3C; /* Replaced: was #0f172a */
+  --color-brand-navy-deep:     #111D29;
+  --color-brand-navy-light:    #1e3a5f; /* Retained — used by Button 'navy' variant */
+  --color-brand-slate:         #3E5C6B;
+  --color-brand-forest:        #2A4A3A;
+  --color-brand-parchment:     #F5F0E6; /* Replaced: was #f8fafc */
+  --color-brand-stone:         #D4C9B8; /* Replaced: was #94a3b8 */
+  --color-brand-copper:        #B8732E; /* Replaced: was #d97706 */
   --color-brand-copper-bright: #D4882F;
-  --color-brand-danger:    #C0392B;
-  --color-brand-success:   #2A6B4A;
+
+  /* Functional tokens */
+  --color-brand-success: #2F6B4F; /* Replaced: was #2A6B4A */
+  --color-brand-warning: #A15C1B;
+  --color-brand-error:   #8F2D2D; /* Renamed from brand-danger; was #C0392B */
+  --color-brand-danger:  #8F2D2D; /* Alias for back-compat with existing usages */
+  --color-brand-info:    #3E5C6B;
+
+  /* Semantic aliases — components reference these, not raw hex.
+     One level of indirection so palette swaps don't ripple. */
+  --color-text-primary:        var(--color-brand-parchment);
+  --color-text-secondary:      var(--color-brand-stone);
+  --color-panel:               var(--color-brand-navy);
+  --color-panel-deep:          var(--color-brand-navy-deep);
+  --color-border-subtle:       color-mix(in oklch, var(--color-brand-stone) 20%, transparent);
+  --color-action:              var(--color-brand-copper);
+  --color-action-hover:        var(--color-brand-copper-bright);
+  --color-focus-ring:          var(--color-brand-copper);
+
+  /* Map-role tokens for the parcel overlay (raster basemap; vector
+     land/water/road/parks tokens deferred until we adopt vector tiles). */
+  --color-map-parcel-default:  var(--color-brand-slate);
+  --color-map-parcel-hover:    var(--color-brand-copper-bright);
+  --color-map-parcel-selected: var(--color-brand-copper);
+  --color-map-label-halo:      var(--color-brand-parchment);
+  --color-map-label-primary:   var(--color-brand-navy);
 
   /* ── Typography ─────────────────────────────────────────── */
   --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
@@ -197,14 +241,45 @@ button,
   }
 }
 
-/* MapLibre native controls — bump 29x29 -> 40x40 to clear WCAG 2.5.5 AA */
+/* MapLibre native controls — instrument-grade restyle.
+   - 40x40 buttons (was 29x29; below WCAG 2.5.5 AA)
+   - navy-deep panel + parchment icons + copper hover
+   - matches the bottom action bar's visual language so all map chrome
+     reads as one cohesive instrument set. */
+.maplibregl-ctrl-group {
+  background: var(--color-brand-navy-deep) !important;
+  border: 1px solid var(--color-border-subtle) !important;
+  border-radius: var(--radius-card) !important;
+  box-shadow: var(--shadow-chrome) !important;
+  overflow: hidden;
+}
 .maplibregl-ctrl-group button {
   width: 40px !important;
   height: 40px !important;
+  background-color: transparent !important;
+  border-color: var(--color-border-subtle) !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--color-border-subtle) !important;
+}
+.maplibregl-ctrl-group button:hover {
+  background-color: color-mix(in oklch, var(--color-brand-copper) 18%, transparent) !important;
 }
 .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
   width: 100%;
   height: 100%;
+  /* Tint the bundled SVG icons toward parchment. invert flips black to
+     white; the slight brightness drop nudges the result to parchment. */
+  filter: invert(0.92) sepia(0.06) hue-rotate(8deg);
+}
+.maplibregl-ctrl-group button[disabled] .maplibregl-ctrl-icon {
+  opacity: 0.4;
+}
+/* The export-control popup (PDF/PNG settings) inherits the same skin. */
+.maplibregl-export-list {
+  background: var(--color-brand-navy-deep) !important;
+  color: var(--color-brand-parchment) !important;
+  border: 1px solid var(--color-border-subtle) !important;
 }
 
 /* Push the maplibre attribution AND the bottom-right native control cluster

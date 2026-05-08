@@ -315,12 +315,16 @@ export default function ParcelMap() {
         generateId: true,
       })
 
-      // ── Branded basemap palette (Holston Scout) ──────────────────
-      // USGS-quadrangle posture: a single, calm, ink-on-vellum line for
-      // every parcel; copper for the chosen one; warm copper-bright for
-      // hover. Per-county tinting was retired — the quilt of three hues
+      // ── Branded parcel-state system (Holston Scout) ──────────────
+      // Color-blind safe: every state distinguished by line-width AND
+      // fill-opacity in addition to hue.
+      //   default   slate @ 0.35       thin  no fill
+      //   hover     copper-bright      med   copper @ 0.14
+      //   selected  copper             thick copper @ 0.24 + corner nodes
+      // Per-county tinting was retired earlier — the quilt of three hues
       // fought the imagery. County is in the detail panel as text.
-      // TODO Phase G: host PBF glyphs on R2 for Holston branded map typography
+      //
+      // TODO Phase G: host PBF glyphs on R2 for Holston-branded map labels
       m.addLayer({
         id: 'parcels-fill',
         type: 'fill',
@@ -328,10 +332,15 @@ export default function ParcelMap() {
         // minzoom matches loadParcelsForViewport's zoom < 13 early-return.
         minzoom: 13,
         paint: {
-          'fill-color': '#F5F0E6', // parchment
-          // Ghost fill so polygons don't vanish at z13 over dark imagery
-          // but never compete with the line work.
-          'fill-opacity': 0.05,
+          // Hover state lifts the fill via feature-state. Default fill is
+          // ~transparent so the imagery stays the visual hero.
+          'fill-color': '#B8732E', // copper — only visible on hover
+          'fill-opacity': [
+            'case',
+            ['boolean', ['feature-state', 'hover'], false],
+            0.14,
+            0,
+          ],
         },
       })
 
@@ -342,21 +351,20 @@ export default function ParcelMap() {
         minzoom: 13,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': '#F5F0E6', // parchment — surveyor's plat ink
-          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.8, 18, 2.2],
-          'line-opacity': 0.85,
+          // Default outline — slate at low alpha. Calmer than parchment
+          // over aerial imagery; reads like a USGS quadrangle line.
+          'line-color': '#3E5C6B',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.8, 18, 1.6],
+          'line-opacity': 0.6,
         },
       })
 
-      // Hover preview — driven by feature-state. Lights up the line under
-      // the cursor before the user commits with a click. The parcels source
-      // has generateId: true which assigns each feature an integer id that
-      // backs the feature-state lookup.
+      // Hover preview — driven by feature-state. Lights up the outline
+      // under the cursor in addition to the fill above.
       //
-      // MapLibre style spec rejects feature-state in `filter` ("data
-      // expressions not supported with filters") so the layer paints every
-      // feature, but at zero opacity unless hover is true. Cost is a single
-      // additional line draw call per frame at zoom >= 13.
+      // MapLibre style spec rejects feature-state in `filter` so the layer
+      // paints every feature at zero opacity unless hover is true. Cost is
+      // a single extra line draw call per frame at zoom >= 13.
       m.addLayer({
         id: 'parcels-hover',
         type: 'line',
@@ -365,13 +373,26 @@ export default function ParcelMap() {
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': '#D4882F', // copper-bright — warm pre-selection
-          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 1.2, 18, 2.8],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 1.4, 18, 3.0],
           'line-opacity': [
             'case',
             ['boolean', ['feature-state', 'hover'], false],
             1,
             0,
           ],
+        },
+      })
+
+      // Selected fill — visible body, not just outline.
+      m.addLayer({
+        id: 'parcels-selected-fill',
+        type: 'fill',
+        source: 'parcels',
+        minzoom: 13,
+        filter: ['==', ['get', 'OBJECTID'], NO_SELECTION],
+        paint: {
+          'fill-color': '#B8732E', // copper
+          'fill-opacity': 0.24,
         },
       })
 
@@ -386,6 +407,26 @@ export default function ParcelMap() {
           'line-color': '#B8732E', // copper — same as chrome wordmark
           'line-width': 3.5,
           'line-opacity': 1,
+        },
+      })
+
+      // Corner nodes — the surveyor signal. Small navy-stroked, parchment-
+      // filled circles at each polygon vertex of the selected parcel.
+      // Source data is set on selectParcel and cleared on clearSelection.
+      m.addSource('parcel-corners', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      })
+      m.addLayer({
+        id: 'parcel-corners',
+        type: 'circle',
+        source: 'parcel-corners',
+        minzoom: 13,
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 14, 2.5, 18, 4.5],
+          'circle-color': '#F5F0E6', // parchment fill
+          'circle-stroke-color': '#1A2B3C', // navy outline
+          'circle-stroke-width': 1.25,
         },
       })
 
@@ -531,11 +572,29 @@ export default function ParcelMap() {
     // parcel — from the map or from a result list — closes the list so the
     // detail panel can take over without overlap.
     setSearchResults(null)
-    // The 'parcels-selected' layer is added on map 'load'. If the user lands
-    // on a permalink and we resolve it before the map is fully loaded, the
-    // layer may not exist yet — guard the filter call.
+    // The selected-state layers (parcels-selected outline + parcels-selected-fill
+    // body) are added on map 'load'. If the user lands on a permalink and we
+    // resolve it before load, guard the filter call.
     if (m.getLayer('parcels-selected')) {
       m.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], f.properties.OBJECTID])
+    }
+    if (m.getLayer('parcels-selected-fill')) {
+      m.setFilter('parcels-selected-fill', ['==', ['get', 'OBJECTID'], f.properties.OBJECTID])
+    }
+    // Corner nodes — extract every polygon vertex (handles MultiPolygon)
+    // and paint as Point features. The Survey Corner brand mark in miniature.
+    const cornerSrc = m.getSource('parcel-corners') as maplibregl.GeoJSONSource | undefined
+    if (cornerSrc) {
+      const points: number[][] = []
+      collectCoords(f.geometry.coordinates, points)
+      cornerSrc.setData({
+        type: 'FeatureCollection',
+        features: points.map((p) => ({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: p },
+          properties: {},
+        })),
+      })
     }
 
     const gislink = f.properties.GISLINK
@@ -626,13 +685,19 @@ export default function ParcelMap() {
   const clearSelection = () => {
     setSelectedParcel(null)
     setEnriched(null)
-    if (map.current?.getLayer('parcels-selected')) {
-      map.current.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], NO_SELECTION])
+    const m = map.current
+    if (m?.getLayer('parcels-selected')) {
+      m.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], NO_SELECTION])
     }
-    if (map.current) {
-      const c = map.current.getCenter()
+    if (m?.getLayer('parcels-selected-fill')) {
+      m.setFilter('parcels-selected-fill', ['==', ['get', 'OBJECTID'], NO_SELECTION])
+    }
+    const cornerSrc = m?.getSource('parcel-corners') as maplibregl.GeoJSONSource | undefined
+    cornerSrc?.setData({ type: 'FeatureCollection', features: [] })
+    if (m) {
+      const c = m.getCenter()
       updateAddressBar({
-        view: { lng: c.lng, lat: c.lat, zoom: map.current.getZoom() },
+        view: { lng: c.lng, lat: c.lat, zoom: m.getZoom() },
         parcelKey: null,
       })
     }
@@ -667,9 +732,10 @@ export default function ParcelMap() {
     setParcelCount(filtered.features.length)
   }, [filters])
 
-  // Re-apply the parcels-selected filter whenever selection or layer-readiness
-  // changes. Without this, a permalink-loaded parcel may not get its yellow
-  // highlight if the map's 'load' event fires after selectParcel runs.
+  // Re-apply selected-state filters + corner nodes whenever selection or
+  // layer-readiness changes. Without this, a permalink-loaded parcel may
+  // not paint its selected state if the map's 'load' event fires after
+  // selectParcel runs.
   useEffect(() => {
     const m = map.current
     if (!m) return
@@ -677,6 +743,26 @@ export default function ParcelMap() {
     const apply = () => {
       if (m.getLayer('parcels-selected')) {
         m.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], id])
+      }
+      if (m.getLayer('parcels-selected-fill')) {
+        m.setFilter('parcels-selected-fill', ['==', ['get', 'OBJECTID'], id])
+      }
+      const cornerSrc = m.getSource('parcel-corners') as maplibregl.GeoJSONSource | undefined
+      if (cornerSrc) {
+        if (selectedParcel) {
+          const points: number[][] = []
+          collectCoords(selectedParcel.geometry.coordinates, points)
+          cornerSrc.setData({
+            type: 'FeatureCollection',
+            features: points.map((p) => ({
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: p },
+              properties: {},
+            })),
+          })
+        } else {
+          cornerSrc.setData({ type: 'FeatureCollection', features: [] })
+        }
       }
     }
     if (m.isStyleLoaded() && m.getLayer('parcels-selected')) {
@@ -983,17 +1069,17 @@ export default function ParcelMap() {
               {/* Hidden when empty — fields the county doesn't populate
                   (PROPTYPE, SALELABEL, ST_NUM/STREET) drop entirely instead
                   of decorating the panel with permanent dashes. */}
-              <DetailField label="Parcel ID" value={selectedParcel.properties.GISLINK} />
+              <DetailField label="Parcel ID" value={selectedParcel.properties.GISLINK} mono />
               <DetailField label="Owner" value={[selectedParcel.properties.OWNER, selectedParcel.properties.OWNER2].filter(Boolean).join('\n')} />
               <DetailField label="Address" value={selectedParcel.properties.ADDRESS} />
               <DetailField label="County" value={selectedParcel.properties.COUNTYNAME} />
-              <DetailField label="Acres" value={selectedParcel.properties.CALC_ACRE != null ? `${selectedParcel.properties.CALC_ACRE.toFixed(3)} ac` : null} />
-              <DetailField label="Zoning" value={selectedParcel.properties.ZONING} />
-              <DetailField label="Appraised Value" value={fmtMoney(selectedParcel.properties.APPRAISAL)} />
-              <DetailField label="Last Sale Price" value={fmtMoney(selectedParcel.properties.PRICE)} />
-              <DetailField label="Last Sale Date" value={fmtDate(selectedParcel.properties.SALEDATE)} />
+              <DetailField label="Acres" value={selectedParcel.properties.CALC_ACRE != null ? `${selectedParcel.properties.CALC_ACRE.toFixed(3)} ac` : null} mono />
+              <DetailField label="Zoning" value={selectedParcel.properties.ZONING} mono />
+              <DetailField label="Appraised Value" value={fmtMoney(selectedParcel.properties.APPRAISAL)} mono />
+              <DetailField label="Last Sale Price" value={fmtMoney(selectedParcel.properties.PRICE)} mono />
+              <DetailField label="Last Sale Date" value={fmtDate(selectedParcel.properties.SALEDATE)} mono />
               <DetailField label="Mailing Address" value={selectedParcel.properties.MAILADDR} />
-              <DetailField label="Mail City/ST/ZIP" value={[selectedParcel.properties.MAILCITY, selectedParcel.properties.STATE].filter(Boolean).join(', ') + (selectedParcel.properties.ZIP ? ' ' + selectedParcel.properties.ZIP : '')} />
+              <DetailField label="Mail City/ST/ZIP" value={[selectedParcel.properties.MAILCITY, selectedParcel.properties.STATE].filter(Boolean).join(', ') + (selectedParcel.properties.ZIP ? ' ' + selectedParcel.properties.ZIP : '')} mono />
 
               {enrichLoading && (
                 <div className="py-2 text-brand-stone animate-pulse">Loading enriched data…</div>
@@ -1337,14 +1423,26 @@ function ParcelInsights({
   )
 }
 
-function DetailField({ label, value }: { label: string; value?: string | number | null }) {
+function DetailField({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string
+  value?: string | number | null
+  /** Render value in tabular-mono (`.data-value`). Use for any numeric or
+   *  parcel-ID-like field where vertical column alignment matters. */
+  mono?: boolean
+}) {
   // Don't render rows where the underlying field is empty. Showing rows of `—`
   // wastes vertical space and obscures the data that does matter.
   if (value == null || String(value).trim() === '' || String(value).trim() === ',') return null
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-brand-stone font-medium">{label}</div>
-      <div className="text-brand-parchment whitespace-pre-line">{String(value)}</div>
+      <div className="data-label">{label}</div>
+      <div className={mono ? 'data-value text-brand-parchment whitespace-pre-line' : 'text-brand-parchment whitespace-pre-line'}>
+        {String(value)}
+      </div>
     </div>
   )
 }

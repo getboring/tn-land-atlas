@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { SurveyCornerMark } from './SurveyCornerMark'
 
 interface HolstonChromeProps {
   /** Slot for search bar (future Phase 5) */
@@ -24,25 +25,15 @@ export function HolstonChrome({ centerSlot, rightSlot, children }: HolstonChrome
           shadow-[--shadow-chrome]
         "
       >
-        {/* Left: brand wordmark */}
+        {/* Left: brand wordmark — Survey Corner mark + Holston Scout */}
         <div className="flex items-center gap-2.5 flex-none select-none">
-          {/* Copper survey-stake mark */}
-          <div
-            className="w-5 h-5 flex items-center justify-center"
-            aria-hidden="true"
-          >
-            <svg viewBox="0 0 20 20" fill="none" className="w-5 h-5">
-              <path
-                d="M10 2L10 14M7 4L10 2L13 4M6 14H14"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-brand-copper"
-              />
-              <circle cx="10" cy="17" r="1.5" className="fill-brand-copper" />
-            </svg>
-          </div>
+          <SurveyCornerMark
+            size={20}
+            outline="#1A2B3C"
+            fill="#F5F0E6"
+            accent="#B8732E"
+            ariaLabel="Holston Scout"
+          />
 
           <span className="font-display text-brand-parchment text-[15px] tracking-wide leading-none">
             Holston Scout

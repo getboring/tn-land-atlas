@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { SurveyCornerMark } from './SurveyCornerMark'
 
 /**
  * Graduated loading states that avoid flash on fast connections
@@ -40,25 +41,18 @@ export function MapLoadingShell() {
       aria-live="polite"
       aria-label="Loading Holston Scout"
     >
-      {/* Brand mark with pulse */}
-      <div className="flex flex-col items-center gap-4">
-        <svg
-          viewBox="0 0 20 20"
-          fill="none"
-          className="w-8 h-8 animate-pulse"
-          style={{ animationDuration: '1.6s' }}
-        >
-          <path
-            d="M10 2L10 14M7 4L10 2L13 4M6 14H14"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-brand-copper"
-          />
-          <circle cx="10" cy="17" r="1.5" className="fill-brand-copper" />
-        </svg>
-
+      {/* Brand mark with pulse — 1.6s for the slow, atlas-like cadence
+          documented in the brand motion philosophy. */}
+      <div
+        className="flex flex-col items-center gap-4 animate-pulse"
+        style={{ animationDuration: '1.6s' }}
+      >
+        <SurveyCornerMark
+          size={36}
+          outline="#1A2B3C"
+          fill="#F5F0E6"
+          accent="#B8732E"
+        />
         <span className="font-display text-brand-copper text-lg tracking-wide">
           Holston Scout
         </span>

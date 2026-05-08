@@ -1,28 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" preserveAspectRatio="xMidYMid slice">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0f172a"/>
-      <stop offset="100%" stop-color="#1e3a5f"/>
+      <stop offset="0%" stop-color="#111D29"/>
+      <stop offset="100%" stop-color="#1A2B3C"/>
     </linearGradient>
     <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#94a3b8" stroke-opacity="0.06" stroke-width="1"/>
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#D4C9B8" stroke-opacity="0.05" stroke-width="1"/>
     </pattern>
   </defs>
   <rect width="1200" height="630" fill="url(#bg)"/>
   <rect width="1200" height="630" fill="url(#grid)"/>
-  <g transform="translate(80, 200)">
-    <path d="M0 200 L60 50 L120 200 Z" fill="none" stroke="#d97706" stroke-width="8" stroke-linejoin="round"/>
-    <circle cx="60" cy="130" r="14" fill="#22c55e"/>
+
+  <!-- Survey Corner mark, large, left of the wordmark -->
+  <g transform="translate(80, 215) scale(8)">
+    <path d="M3.5 6.5 L18 4.2 L20.5 13 L16.5 19.5 L5.5 18 Z"
+          fill="#F5F0E6" stroke="#1A2B3C" stroke-width="1.5"
+          stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="18" cy="4.2" r="2.4" fill="#B8732E"/>
+    <circle cx="18" cy="4.2" r="2.4" fill="none" stroke="#1A2B3C" stroke-width="0.8"/>
   </g>
-  <text x="240" y="270" font-family="system-ui, -apple-system, sans-serif" font-size="84" font-weight="800" fill="#f8fafc">TN Land Atlas</text>
-  <text x="240" y="335" font-family="system-ui, -apple-system, sans-serif" font-size="34" font-weight="500" fill="#94a3b8">Sullivan · Washington · Carter</text>
-  <text x="240" y="395" font-family="system-ui, -apple-system, sans-serif" font-size="26" font-weight="400" fill="#94a3b8">Search owners · Aerial imagery · Sales history · Topo contours</text>
-  <g transform="translate(80, 500)">
-    <rect width="180" height="40" rx="20" fill="#22c55e" fill-opacity="0.15" stroke="#22c55e" stroke-opacity="0.3"/>
-    <text x="90" y="26" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600" fill="#22c55e" text-anchor="middle">Sullivan</text>
-    <rect x="200" width="180" height="40" rx="20" fill="#0ea5e9" fill-opacity="0.15" stroke="#0ea5e9" stroke-opacity="0.3"/>
-    <text x="290" y="26" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600" fill="#0ea5e9" text-anchor="middle">Washington</text>
-    <rect x="400" width="180" height="40" rx="20" fill="#a855f7" fill-opacity="0.15" stroke="#a855f7" stroke-opacity="0.3"/>
-    <text x="490" y="26" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600" fill="#a855f7" text-anchor="middle">Carter</text>
-  </g>
+
+  <!-- Wordmark -->
+  <text x="290" y="290" font-family="Playfair Display, Georgia, serif" font-size="78" font-weight="700" fill="#F5F0E6">Holston Scout</text>
+  <text x="290" y="335" font-family="Source Sans 3, Inter, system-ui, sans-serif" font-size="22" font-weight="600" fill="#2A4A3A" letter-spacing="2">BY HOLSTON INTEL</text>
+  <text x="290" y="395" font-family="Source Sans 3, Inter, system-ui, sans-serif" font-size="26" font-weight="400" fill="#D4C9B8">Scout the ground. Know the build.</text>
+  <text x="290" y="430" font-family="Source Sans 3, Inter, system-ui, sans-serif" font-size="18" font-weight="400" fill="#D4C9B8" opacity="0.7">East Tennessee · Sullivan · Washington · Carter</text>
+
+  <!-- Bottom rule + tag -->
+  <line x1="80" y1="540" x2="1120" y2="540" stroke="#D4C9B8" stroke-opacity="0.2" stroke-width="1"/>
+  <text x="80" y="575" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="14" fill="#B8732E" letter-spacing="2">PRE-CONSTRUCTION  ·  PARCEL INTELLIGENCE  ·  TN BUILDERS</text>
 </svg>
