@@ -15,6 +15,58 @@ function isAbortError(e: unknown): boolean {
   return e instanceof DOMException && e.name === 'AbortError'
 }
 
+type Bounds = [[number, number], [number, number]]
+
+// Walks any nested geometry coordinate array (Polygon or MultiPolygon),
+// emits each [lng, lat] pair into `out`. ArcGIS occasionally returns
+// MultiPolygons even though our typing assumes Polygon, so we handle both
+// instead of trusting the static type.
+function collectCoords(node: unknown, out: number[][]): void {
+  if (!Array.isArray(node)) return
+  if (node.length > 0 && typeof node[0] === 'number') {
+    if (node.length >= 2 && Number.isFinite(node[0]) && Number.isFinite(node[1])) {
+      out.push(node as number[])
+    }
+    return
+  }
+  for (const child of node) collectCoords(child, out)
+}
+
+function featureBounds(f: ParcelFeature): Bounds | null {
+  const pts: number[][] = []
+  collectCoords(f.geometry.coordinates, pts)
+  if (pts.length === 0) return null
+  let minLng = Infinity
+  let maxLng = -Infinity
+  let minLat = Infinity
+  let maxLat = -Infinity
+  for (const [lng, lat] of pts) {
+    if (lng < minLng) minLng = lng
+    if (lng > maxLng) maxLng = lng
+    if (lat < minLat) minLat = lat
+    if (lat > maxLat) maxLat = lat
+  }
+  if (!Number.isFinite(minLng) || !Number.isFinite(minLat)) return null
+  return [[minLng, minLat], [maxLng, maxLat]]
+}
+
+function unionBounds(features: ParcelFeature[]): Bounds | null {
+  let minLng = Infinity
+  let maxLng = -Infinity
+  let minLat = Infinity
+  let maxLat = -Infinity
+  for (const f of features) {
+    const b = featureBounds(f)
+    if (!b) continue
+    if (b[0][0] < minLng) minLng = b[0][0]
+    if (b[1][0] > maxLng) maxLng = b[1][0]
+    if (b[0][1] < minLat) minLat = b[0][1]
+    if (b[1][1] > maxLat) maxLat = b[1][1]
+  }
+  if (!Number.isFinite(minLng)) return null
+  return [[minLng, minLat], [maxLng, maxLat]]
+}
+
 const COUNTIES = ['ALL', 'Sullivan', 'Washington', 'Carter'] as const
 type County = (typeof COUNTIES)[number]
 
@@ -30,6 +82,7 @@ export default function ParcelMap() {
   const [enrichLoading, setEnrichLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [parcelCount, setParcelCount] = useState(0)
+  const [searchResults, setSearchResults] = useState<ParcelFeature[] | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Refs to the latest callbacks so the long-lived map event handlers
@@ -203,31 +256,51 @@ export default function ParcelMap() {
     }
   }, [])
 
+  const flyToFeature = useCallback((f: ParcelFeature, m: maplibregl.Map) => {
+    const b = featureBounds(f)
+    if (b) m.fitBounds(b, { padding: 120, maxZoom: 17 })
+  }, [])
+
   const doSearch = useCallback(async () => {
-    if (!searchQuery.trim() || !map.current) return
+    const q = searchQuery.trim()
+    if (!q || !map.current) return
     setLoading(true)
     try {
-      const data = await searchParcels(searchQuery, activeCounty)
-      if (data.features?.length) {
+      const data = await searchParcels(q, activeCounty)
+      const features = (data.features ?? []) as ParcelFeature[]
+      setSearchResults(features)
+      if (features.length > 0) {
         const src = map.current.getSource('parcels') as maplibregl.GeoJSONSource | undefined
         src?.setData(data as GeoJSON.FeatureCollection)
-        setParcelCount(data.features.length)
-        const f = data.features[0]
-        selectParcel(f, map.current)
-        const coords = f.geometry.coordinates[0]
-        const lons = coords.map((c) => c[0])
-        const lats = coords.map((c) => c[1])
-        map.current.fitBounds(
-          [[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]],
-          { padding: 120, maxZoom: 17 }
-        )
+        setParcelCount(features.length)
+        // Frame all matches so the user can see where they are.
+        const b = unionBounds(features)
+        if (b) map.current.fitBounds(b, { padding: 80, maxZoom: 17 })
       }
     } catch (e) {
       console.error('[search] failed', e)
+      setSearchResults([])
     } finally {
       setLoading(false)
     }
-  }, [searchQuery, activeCounty, selectParcel])
+  }, [searchQuery, activeCounty])
+
+  const pickResult = useCallback(
+    (f: ParcelFeature) => {
+      if (!map.current) return
+      selectParcel(f, map.current)
+      flyToFeature(f, map.current)
+      setSearchResults(null)
+    },
+    [selectParcel, flyToFeature],
+  )
+
+  const closeSearchResults = useCallback(() => setSearchResults(null), [])
+
+  const clearSearch = useCallback(() => {
+    setSearchQuery('')
+    setSearchResults(null)
+  }, [])
 
   const toggleBase = () => {
     const next = baseLayer === 'esri' ? 'naip' : 'esri'
@@ -275,36 +348,52 @@ export default function ParcelMap() {
         style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
       />
 
-      {/* Top bar — row 1: logo + search + view controls (always visible) */}
+      {/* Top bar — row 1: logo + search + view controls (always visible).
+          All tap targets are at least 40px tall (WCAG 2.5.5 AA / iOS HIG comfortable). */}
       <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2">
-        <div className="flex items-center gap-2 rounded-xl bg-brand-navy/90 backdrop-blur border border-brand-stone/15 px-3 py-2 shrink-0">
+        <div className="flex items-center gap-2 rounded-xl bg-brand-navy/90 backdrop-blur border border-brand-stone/15 px-3 h-10 shrink-0">
           <Layers className="w-4 h-4 text-brand-copper" />
           <span className="text-sm font-bold text-white whitespace-nowrap">TN Land Atlas</span>
         </div>
 
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
-          <input
-            type="search"
-            aria-label="Search owner or address"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && doSearch()}
-            placeholder="Search owner or address…"
-            className="flex-1 min-w-0 bg-brand-navy/90 backdrop-blur border border-brand-stone/20 text-white text-sm px-3 py-1.5 rounded-lg placeholder:text-brand-stone outline-none focus:border-brand-copper"
-          />
-          <Button size="icon" onClick={doSearch} aria-label="Search">
+          <div className="relative flex-1 min-w-0">
+            <input
+              type="search"
+              aria-label="Search owner or address"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') doSearch()
+                if (e.key === 'Escape') clearSearch()
+              }}
+              placeholder="Search owner or address…"
+              className="w-full bg-brand-navy/90 backdrop-blur border border-brand-stone/20 text-white text-sm px-3 pr-10 h-10 rounded-lg placeholder:text-brand-stone outline-none focus:border-brand-copper"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                aria-label="Clear search"
+                className="absolute right-1 top-1 inline-flex items-center justify-center w-8 h-8 rounded-md text-brand-stone hover:text-white hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <Button size="default" onClick={doSearch} aria-label="Search" className="h-10 w-10 px-0">
             <Search className="w-4 h-4" />
           </Button>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          <Button variant="outline" size="sm" onClick={toggleParcels}>
+          <Button variant="outline" onClick={toggleParcels} className="h-10 px-3 text-xs">
             {parcelsVisible ? 'Hide' : 'Show'}
           </Button>
-          <Button variant="outline" size="sm" onClick={toggleBase}>
+          <Button variant="outline" onClick={toggleBase} className="h-10 px-3 text-xs">
             {baseLayer === 'esri' ? 'NAIP' : 'Esri'}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => map.current?.flyTo({ center: [-82.35, 36.35], zoom: 11 })} aria-label="Recenter">
+          <Button variant="outline" onClick={() => map.current?.flyTo({ center: [-82.35, 36.35], zoom: 11 })} aria-label="Recenter" className="h-10 w-10 px-0">
             <Crosshair className="w-4 h-4" />
           </Button>
         </div>
@@ -314,7 +403,7 @@ export default function ParcelMap() {
       <div
         role="group"
         aria-label="County filter"
-        className="absolute top-16 left-3 right-3 z-10 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide"
+        className="absolute top-[3.4rem] left-3 right-3 z-10 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide"
       >
         {COUNTIES.map((c) => (
           <button
@@ -322,7 +411,7 @@ export default function ParcelMap() {
             onClick={() => setActiveCounty(c)}
             aria-pressed={activeCounty === c}
             className={cn(
-              'px-3 py-1 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap shrink-0',
+              'px-4 h-9 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap shrink-0',
               activeCounty === c
                 ? 'bg-brand-copper border-brand-copper text-white'
                 : 'bg-brand-navy/90 backdrop-blur border-brand-stone/20 text-brand-parchment hover:bg-white/10'
@@ -332,6 +421,72 @@ export default function ParcelMap() {
           </button>
         ))}
       </div>
+
+      {/* Search results panel. Appears under the top bar on the LEFT so it
+          doesn't collide with the property detail panel on the right. On
+          mobile it spans the full width. Picking a result closes the list. */}
+      {searchResults !== null && (
+        <div className="absolute top-28 left-3 right-3 sm:right-auto sm:w-96 z-30 max-h-[65vh] flex flex-col">
+          <Card className="flex flex-col overflow-hidden">
+            <CardHeader className="pb-2 flex-row items-center justify-between space-y-0 gap-2">
+              <CardTitle className="text-sm">
+                {searchResults.length === 0
+                  ? 'No matches'
+                  : `${searchResults.length} ${searchResults.length === 1 ? 'match' : 'matches'}`}
+              </CardTitle>
+              <button
+                onClick={closeSearchResults}
+                aria-label="Close search results"
+                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-brand-stone hover:text-white hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </CardHeader>
+            <CardContent className="p-0 overflow-y-auto">
+              {searchResults.length === 0 && (
+                <div className="px-4 py-6 text-xs text-brand-stone">
+                  Try a different name, street, or parcel ID. Filter is set to{' '}
+                  <span className="text-brand-parchment">{activeCounty === 'ALL' ? 'all counties' : `${activeCounty} County`}</span>.
+                </div>
+              )}
+              {searchResults.length > 0 && (
+                <ul className="divide-y divide-brand-stone/10">
+                  {searchResults.slice(0, 200).map((f) => {
+                    const addr = f.properties.ADDRESS || `${f.properties.ST_NUM ?? ''} ${f.properties.STREET ?? ''}`.trim()
+                    const acres = f.properties.CALC_ACRE != null ? `${f.properties.CALC_ACRE.toFixed(2)} ac` : null
+                    return (
+                      <li key={f.properties.OBJECTID}>
+                        <button
+                          type="button"
+                          onClick={() => pickResult(f)}
+                          className="w-full text-left px-4 py-3 min-h-[64px] hover:bg-white/5 active:bg-white/10 focus:outline-none focus:bg-white/10 transition-colors"
+                        >
+                          <div className="text-sm text-brand-parchment font-medium truncate">
+                            {f.properties.OWNER || 'Unknown owner'}
+                          </div>
+                          {addr && (
+                            <div className="text-xs text-brand-stone truncate mt-0.5">{addr}</div>
+                          )}
+                          <div className="text-[10px] uppercase tracking-wider text-brand-copper/80 mt-1">
+                            {f.properties.COUNTYNAME?.replace(' County', '') ?? '—'}
+                            {acres ? ` · ${acres}` : ''}
+                            {f.properties.GISLINK ? ` · ${f.properties.GISLINK}` : ''}
+                          </div>
+                        </button>
+                      </li>
+                    )
+                  })}
+                  {searchResults.length > 200 && (
+                    <li className="px-4 py-3 text-[11px] text-brand-stone">
+                      Showing 200 of {searchResults.length} matches — refine your query to narrow.
+                    </li>
+                  )}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Single status pill — loading takes precedence over count to avoid
           one-frame overlap during the load -> loaded transition. */}
@@ -355,7 +510,13 @@ export default function ParcelMap() {
             <CardHeader className="pb-2">
               <div className="flex items-start justify-between">
                 <CardTitle className="text-sm">Property Details</CardTitle>
-                <button onClick={clearSelection} aria-label="Close property details" className="text-brand-stone hover:text-white"><X className="w-4 h-4" /></button>
+                <button
+                  onClick={clearSelection}
+                  aria-label="Close property details"
+                  className="inline-flex items-center justify-center w-10 h-10 -mr-2 -mt-2 rounded-md text-brand-stone hover:text-white hover:bg-white/10"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </CardHeader>
             <CardContent className="space-y-3 text-xs">

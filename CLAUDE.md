@@ -51,6 +51,19 @@ functions/api/
 e2e/map.spec.ts                  33 tests x 3 viewports
 ```
 
+## Search UX
+- Pressing Enter or the search button calls `/api/search` and stores all
+  matched features (up to 2000) in `searchResults` state.
+- A panel slides in below the top bar (left side on desktop, full-width on
+  mobile) listing each match: owner / address / county / acres / parcel ID.
+- Tapping a row -> `pickResult()` -> selects the parcel, flies to its bounds,
+  closes the result panel.
+- The list caps at 200 rendered rows (a footer says "Showing 200 of N");
+  scrolling further isn't useful when the user should refine the query.
+- The search input gets a clear-X button when non-empty and supports Escape
+  to clear + close results.
+- All tap targets in the top bar are ≥40px tall (WCAG 2.5.5 AA / iOS HIG).
+
 ## Architecture notes
 - `lib/api.ts` calls `/api/*` only -- no client-side Supabase fallback.
   When the Pages project doesn't have `SUPABASE_URL` / `SUPABASE_ANON_KEY` set,

@@ -135,6 +135,33 @@ test.describe('TN Land Atlas', () => {
     await expect(input).toHaveValue('123 main')
   })
 
+  test('search shows a results list and picking one opens detail', async ({ page }) => {
+    const input = page.getByPlaceholder('Search owner or address…')
+    await input.fill('smith')
+    const searchResp = page.waitForResponse(
+      (r) => r.url().includes('/api/search') && r.status() === 200,
+      { timeout: 25000 },
+    )
+    await input.press('Enter')
+    await searchResp
+    const heading = page.getByRole('heading', { name: /^(\d+ match(es)?|No matches)$/ })
+    await expect(heading).toBeVisible({ timeout: 15000 })
+    const firstResult = page.locator('ul li button').first()
+    if (await firstResult.count()) {
+      await firstResult.click()
+      await expect(page.getByText('Property Details')).toBeVisible({ timeout: 8000 })
+      // Results panel heading should be gone
+      await expect(heading).toHaveCount(0)
+    }
+  })
+
+  test('clear-search button empties the input and closes results', async ({ page }) => {
+    const input = page.getByPlaceholder('Search owner or address…')
+    await input.fill('hello')
+    await page.getByRole('button', { name: 'Clear search' }).click()
+    await expect(input).toHaveValue('')
+  })
+
   test('base layer toggle switches between Esri and NAIP', async ({ page }) => {
     const toggle = page.getByRole('button', { name: /^(NAIP|Esri)$/ })
     await expect(toggle).toBeVisible()

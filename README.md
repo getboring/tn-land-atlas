@@ -34,6 +34,17 @@ to the browser. With them unset, the property panel still renders — it just
 shows the ArcGIS attributes without the enriched buildings / sales / entities
 tabs.
 
+## Search
+
+Type an owner name, address, or parcel ID and press **Enter** (or the search
+button). The map frames every match and a result panel slides in showing
+owner / address / county / acres / parcel ID for each. Tap a row to select
+that parcel, fly the camera there, and open the property detail sidebar.
+Tap targets are at least 40px tall (WCAG 2.5.5 AA, iOS HIG comfortable).
+
+The result list caps at 200 rows on screen out of up to 2000 returned by
+ArcGIS — refine the query to narrow.
+
 ## API (Cloudflare Pages Functions)
 
 | Endpoint        | Method | Body                                              | Returns |
