@@ -688,7 +688,9 @@ export default function ParcelMap() {
                 if (e.key === 'Escape') clearSearch()
               }}
               placeholder="Search owner or address…"
-              className="w-full bg-brand-navy/90 backdrop-blur border border-brand-stone/20 text-white text-sm px-3 pr-10 h-10 rounded-lg placeholder:text-brand-stone outline-none focus:border-brand-copper"
+              // text-base (16px) on the input — anything smaller triggers
+              // iOS Safari's auto-zoom-on-focus, which is awful on a map UI.
+              className="w-full bg-brand-navy/90 backdrop-blur border border-brand-stone/20 text-white text-base sm:text-sm px-3 pr-10 h-10 rounded-lg placeholder:text-brand-stone outline-none focus:border-brand-copper"
             />
             {searchQuery && (
               <button
@@ -1105,7 +1107,8 @@ function FilterSheet({
                   onChange({ ...filters, minAcres: v === '' ? null : Number(v) })
                 }}
                 placeholder="any"
-                className="flex-1 bg-white/5 border border-brand-stone/20 text-white text-sm px-3 h-10 rounded-lg outline-none focus:border-brand-copper"
+                // text-base (16px) prevents iOS auto-zoom on focus.
+                className="flex-1 bg-white/5 border border-brand-stone/20 text-white text-base sm:text-sm px-3 h-10 rounded-lg outline-none focus:border-brand-copper"
               />
               <span className="text-xs text-brand-stone">ac</span>
             </div>

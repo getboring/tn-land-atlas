@@ -1,0 +1,2 @@
+# Task completion checklist
+Before claiming done after code changes: `npm run build`, `npx eslint .`, `npm test`, and relevant Playwright tests. For API changes, verify invalid query, invalid county, and invalid bbox probes return 400. Do not modify files during read-only review tasks. Never commit secrets or add Supabase env placeholders to `wrangler.toml`.

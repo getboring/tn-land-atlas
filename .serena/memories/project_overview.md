@@ -1,0 +1,2 @@
+# Project overview
+TN Land Atlas is a Cloudflare Pages app for parcel mapping in Sullivan, Washington, and Carter counties. Stack: Vite 8, React 19, TypeScript strict, MapLibre GL JS 5, Tailwind v4, shadcn primitives, Cloudflare Pages Functions under `functions/api`, ArcGIS REST for live parcels, Supabase REST server-side only for enrichment. Main frontend is `src/components/ParcelMap.tsx`; typed API wrappers are in `src/lib/api.ts`; validation is in `functions/api/_validate.ts`.
