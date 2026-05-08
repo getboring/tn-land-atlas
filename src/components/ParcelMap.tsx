@@ -2,14 +2,16 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import mlcontour from 'maplibre-contour'
-import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey } from '@/lib/api'
+import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey, queryParcelsInPolygon } from '@/lib/api'
 import type { ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Search, X, Layers, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain } from 'lucide-react'
+import { Search, X, Layers, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2 } from 'lucide-react'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
 import type { PropertyData } from '@/lib/supabase-queries'
 import { parsePermalink, updateAddressBar, DEFAULT_MAP_VIEW } from '@/lib/permalink'
+import { createDraw, setDrawMode, lineDistanceMeters, formatDistance, type DrawMode } from '@/lib/draw'
+import type { TerraDraw } from 'terra-draw'
 
 const NO_SELECTION: number = -1
 
@@ -96,6 +98,9 @@ export default function ParcelMap() {
   const [searchResults, setSearchResults] = useState<ParcelFeature[] | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
   const [contoursVisible, setContoursVisible] = useState(false)
+  const [drawMode, setDrawModeState] = useState<DrawMode>('idle')
+  const [rulerDistance, setRulerDistance] = useState<string | null>(null)
+  const drawRef = useRef<TerraDraw | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialPermalink = useRef(parsePermalink(window.location.search))
@@ -105,6 +110,7 @@ export default function ParcelMap() {
   // updates (e.g. activeCounty changes).
   const loadRef = useRef<(m: maplibregl.Map) => void>(() => {})
   const selectRef = useRef<(f: ParcelFeature, m: maplibregl.Map) => void>(() => {})
+  const countyRef = useRef<County>('ALL')
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return
@@ -297,9 +303,50 @@ export default function ParcelMap() {
     const ro = new ResizeObserver(() => m.resize())
     ro.observe(mapContainer.current)
 
+    // Terra Draw lazily — once the map is loaded so its layers/sources exist.
+    m.once('load', () => {
+      const draw = createDraw(m, {
+        onPolygonComplete: (ring) => {
+          // ring is the polygon outer ring including the closing duplicate
+          // vertex. Send to /api/parcels with polygon spatial filter.
+          void (async () => {
+            setLoading(true)
+            try {
+              const data = await queryParcelsInPolygon(ring, countyRef.current)
+              setSearchResults((data.features ?? []) as ParcelFeature[])
+              const src = m.getSource('parcels') as maplibregl.GeoJSONSource | undefined
+              src?.setData(data as GeoJSON.FeatureCollection)
+              setParcelCount(data.features?.length ?? 0)
+            } catch (e) {
+              console.error('[lasso] failed', e)
+              setSearchResults([])
+            } finally {
+              setLoading(false)
+              // Drop draw mode back to idle but keep the polygon visible until
+              // the user clears the result panel.
+              draw.setMode('static')
+              setDrawModeState('idle')
+            }
+          })()
+        },
+        onLineComplete: (line) => {
+          setRulerDistance(formatDistance(lineDistanceMeters(line)))
+          draw.setMode('static')
+          setDrawModeState('idle')
+        },
+      })
+      draw.start()
+      // Default to static so map clicks pass through to parcel selection.
+      // The Lasso / Ruler buttons switch into polygon / linestring mode.
+      draw.setMode('static')
+      drawRef.current = draw
+    })
+
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
       ro.disconnect()
+      drawRef.current?.stop()
+      drawRef.current = null
       m.remove()
       map.current = null
       delete window.__map__
@@ -420,6 +467,14 @@ export default function ParcelMap() {
     map.current?.setLayoutProperty('contour-lines', 'visibility', next ? 'visible' : 'none')
   }
 
+  const switchDrawMode = useCallback((next: DrawMode) => {
+    if (!drawRef.current) return
+    const target: DrawMode = drawMode === next ? 'idle' : next
+    setDrawModeState(target)
+    if (target === 'idle') setRulerDistance(null)
+    setDrawMode(drawRef.current, target)
+  }, [drawMode])
+
   const toggleParcels = () => {
     const next = !parcelsVisible
     setParcelsVisible(next)
@@ -457,12 +512,16 @@ export default function ParcelMap() {
     }
   }, [])
 
-  // Keep refs in sync with the latest callbacks so the map's persistent
-  // event handlers always see the current state.
+  // Keep refs in sync with the latest callbacks/state so the map's persistent
+  // event handlers always see the current values.
   useEffect(() => {
     loadRef.current = loadParcelsForViewport
     selectRef.current = selectParcel
   }, [loadParcelsForViewport, selectParcel])
+
+  useEffect(() => {
+    countyRef.current = activeCounty
+  }, [activeCounty])
 
   // Reload parcels when the active county filter changes.
   useEffect(() => {
@@ -586,6 +645,64 @@ export default function ParcelMap() {
           </button>
         ))}
       </div>
+
+      {/* Drawing toolbar — vertical stack on the right, below MapLibre's native
+          zoom / fullscreen / geolocate cluster (which sits at top: 6rem).
+          Each button has a navy backdrop so it stays readable over imagery. */}
+      <div
+        role="toolbar"
+        aria-label="Drawing tools"
+        className="absolute right-3 top-[14rem] z-10 flex flex-col gap-1.5"
+      >
+        <Button
+          variant="outline"
+          onClick={() => switchDrawMode('lasso')}
+          aria-label="Lasso parcels"
+          aria-pressed={drawMode === 'lasso'}
+          title="Lasso: draw a polygon to find every parcel inside"
+          className={cn(
+            'h-10 w-10 px-0 bg-brand-navy/90 backdrop-blur',
+            drawMode === 'lasso' && 'bg-brand-copper border-brand-copper text-white',
+          )}
+        >
+          <Lasso className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => switchDrawMode('ruler')}
+          aria-label="Measure distance"
+          aria-pressed={drawMode === 'ruler'}
+          title="Ruler: draw a line to measure distance"
+          className={cn(
+            'h-10 w-10 px-0 bg-brand-navy/90 backdrop-blur',
+            drawMode === 'ruler' && 'bg-brand-copper border-brand-copper text-white',
+          )}
+        >
+          <Ruler className="w-4 h-4" />
+        </Button>
+        {(drawMode !== 'idle' || rulerDistance) && (
+          <Button
+            variant="outline"
+            onClick={() => switchDrawMode('idle')}
+            aria-label="Cancel drawing"
+            title="Cancel / clear drawing"
+            className="h-10 w-10 px-0 bg-brand-navy/90 backdrop-blur"
+          >
+            <MousePointer2 className="w-4 h-4" />
+          </Button>
+        )}
+      </div>
+
+      {/* Ruler distance pill */}
+      {rulerDistance && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-10 px-4 py-2 rounded-full bg-brand-navy/95 border border-brand-copper text-xs text-white"
+        >
+          Ruler: <span className="font-bold">{rulerDistance}</span>
+        </div>
+      )}
 
       {/* Search results panel. Appears under the top bar on the LEFT so it
           doesn't collide with the property detail panel on the right. On

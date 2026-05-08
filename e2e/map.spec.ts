@@ -172,6 +172,11 @@ test.describe('TN Land Atlas', () => {
     await expect(toggle).not.toHaveText(before ?? '')
   })
 
+  test('drawing toolbar exposes lasso and ruler', async ({ page }) => {
+    await expect(page.getByRole('button', { name: /Lasso parcels/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Measure distance/i })).toBeVisible()
+  })
+
   test('topo contours toggle works', async ({ page }) => {
     const toggle = page.getByRole('button', { name: /contour lines/i })
     await expect(toggle).toBeVisible()

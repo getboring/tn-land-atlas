@@ -42,3 +42,28 @@ export function validateQuery(input: unknown): string | null {
   // %...% itself, so a user who types `%` shouldn't get to widen the pattern.
   return trimmed.replace(/[%_]/g, '')
 }
+
+// Validate a closed polygon ring as an array of [lng, lat] pairs. Caps at
+// 200 vertices to keep ArcGIS request size sane and rejects rings that lie
+// outside our TN superset.
+const MAX_RING_VERTICES = 200
+
+export function validatePolygonRing(input: unknown): [number, number][] | null {
+  if (!Array.isArray(input)) return null
+  if (input.length < 4 || input.length > MAX_RING_VERTICES) return null
+  const ring: [number, number][] = []
+  for (const pt of input) {
+    if (!Array.isArray(pt) || pt.length !== 2) return null
+    const [lng, lat] = pt as [unknown, unknown]
+    if (typeof lng !== 'number' || typeof lat !== 'number') return null
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null
+    if (lng < TN_MIN_LON || lng > TN_MAX_LON) return null
+    if (lat < TN_MIN_LAT || lat > TN_MAX_LAT) return null
+    ring.push([lng, lat])
+  }
+  // Close the ring if the caller didn't already.
+  const [fx, fy] = ring[0]
+  const [lx, ly] = ring[ring.length - 1]
+  if (fx !== lx || fy !== ly) ring.push([fx, fy])
+  return ring
+}

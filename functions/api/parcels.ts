@@ -1,4 +1,4 @@
-import { validateBbox, validateCounty } from './_validate'
+import { validateBbox, validateCounty, validatePolygonRing } from './_validate'
 
 const ARCGIS_URL = 'https://gis.johnsoncitytn.org/arcgis/rest/services/ParcelPublishing/TaxParcels/MapServer/0'
 
@@ -18,15 +18,31 @@ export const onRequestPost: PagesFunction = async (context) => {
   } catch {
     return Response.json({ error: 'Invalid JSON' }, { status: 400 })
   }
-  const { west, south, east, north, county } = (body ?? {}) as Record<string, unknown>
-
-  const bbox = validateBbox(west, south, east, north)
-  if (!bbox) return Response.json({ error: 'Invalid bbox' }, { status: 400 })
+  const { west, south, east, north, county, polygon } = (body ?? {}) as Record<string, unknown>
 
   const validCounty = validateCounty(county ?? 'ALL')
   if (!validCounty) return Response.json({ error: 'Invalid county' }, { status: 400 })
 
   const where = buildCountyWhere(validCounty)
+
+  // Polygon path: spatial filter against an arbitrary ring (lasso tool).
+  if (polygon !== undefined) {
+    const ring = validatePolygonRing(polygon)
+    if (!ring) return Response.json({ error: 'Invalid polygon' }, { status: 400 })
+    const geom = JSON.stringify({ rings: [ring], spatialReference: { wkid: 4326 } })
+    const url = `${ARCGIS_URL}/query?where=${encodeURIComponent(where)}&geometry=${encodeURIComponent(geom)}&geometryType=esriGeometryPolygon&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=${encodeURIComponent(OUT_FIELDS)}&outSR=4326&f=geojson&resultRecordCount=2000`
+    const res = await fetch(url, { cf: { cacheTtl: 60 } })
+    if (!res.ok) return Response.json({ error: 'ArcGIS error', status: res.status }, { status: 502 })
+    const data = await res.json()
+    return new Response(JSON.stringify(data), {
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=30' },
+    })
+  }
+
+  // Bbox path (default).
+  const bbox = validateBbox(west, south, east, north)
+  if (!bbox) return Response.json({ error: 'Invalid bbox' }, { status: 400 })
+
   const url = `${ARCGIS_URL}/query?where=${encodeURIComponent(where)}&geometry=${encodeURIComponent(`${bbox.west},${bbox.south},${bbox.east},${bbox.north}`)}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=${encodeURIComponent(OUT_FIELDS)}&outSR=4326&f=geojson&resultRecordCount=2000`
 
   const res = await fetch(url, { cf: { cacheTtl: 300 } })

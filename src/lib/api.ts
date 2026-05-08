@@ -39,6 +39,13 @@ export async function searchParcels(query: string, county: string): Promise<Parc
   return postJson<ParcelCollection>('/api/search', { query, county })
 }
 
+export async function queryParcelsInPolygon(
+  polygon: [number, number][],
+  county: string,
+): Promise<ParcelCollection> {
+  return postJson<ParcelCollection>('/api/parcels', { polygon, county })
+}
+
 export async function getParcelByKey(key: string): Promise<import('./arcgis').ParcelFeature> {
   const res = await fetch(`/api/parcel?key=${encodeURIComponent(key)}`)
   if (!res.ok) {
