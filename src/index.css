@@ -187,6 +187,16 @@ button,
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Backdrop-filter is broadly supported in 2026 (Baseline since 2022) but old
+   field-issued Android tablets still ship without it. Fall back to a solid
+   navy-deep so panels stay legible instead of going transparent. Targets
+   Tailwind's compiled .backdrop-blur* classes. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  [class*="backdrop-blur"] {
+    background-color: var(--color-brand-navy-deep) !important;
+  }
+}
+
 /* MapLibre native controls — bump 29x29 -> 40x40 to clear WCAG 2.5.5 AA */
 .maplibregl-ctrl-group button {
   width: 40px !important;

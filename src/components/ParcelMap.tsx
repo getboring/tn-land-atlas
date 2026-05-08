@@ -297,7 +297,10 @@ export default function ParcelMap() {
         'source-layer': 'contours',
         layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': 'rgba(255,200,120,0.55)',
+          // Holston copper-bright — formalizes the prior rgba(255,200,120) ad-hoc
+          // tone into the brand token. 0.55 alpha so contours read over imagery
+          // without drowning the parcel mosaic.
+          'line-color': 'rgba(212, 136, 47, 0.55)', // #D4882F @ 55%
           'line-width': ['match', ['get', 'level'], 1, 1.4, 0.6],
         },
       })
@@ -312,22 +315,23 @@ export default function ParcelMap() {
         generateId: true,
       })
 
+      // ── Branded basemap palette (Holston Scout) ──────────────────
+      // USGS-quadrangle posture: a single, calm, ink-on-vellum line for
+      // every parcel; copper for the chosen one; warm copper-bright for
+      // hover. Per-county tinting was retired — the quilt of three hues
+      // fought the imagery. County is in the detail panel as text.
+      // TODO Phase G: host PBF glyphs on R2 for Holston branded map typography
       m.addLayer({
         id: 'parcels-fill',
         type: 'fill',
         source: 'parcels',
         // minzoom matches loadParcelsForViewport's zoom < 13 early-return.
-        // No point in even attempting to paint at lower zooms.
         minzoom: 13,
         paint: {
-          'fill-color': [
-            'match', ['get', 'COUNTYNAME'],
-            'Sullivan County', '#22c55e',
-            'Washington County', '#0ea5e9',
-            'Carter County', '#a855f7',
-            '#94a3b8',
-          ],
-          'fill-opacity': 0.10,
+          'fill-color': '#F5F0E6', // parchment
+          // Ghost fill so polygons don't vanish at z13 over dark imagery
+          // but never compete with the line work.
+          'fill-opacity': 0.05,
         },
       })
 
@@ -338,15 +342,36 @@ export default function ParcelMap() {
         minzoom: 13,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': [
-            'match', ['get', 'COUNTYNAME'],
-            'Sullivan County', '#22c55e',
-            'Washington County', '#0ea5e9',
-            'Carter County', '#a855f7',
-            '#94a3b8',
-          ],
+          'line-color': '#F5F0E6', // parchment — surveyor's plat ink
           'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.8, 18, 2.2],
-          'line-opacity': 0.9,
+          'line-opacity': 0.85,
+        },
+      })
+
+      // Hover preview — driven by feature-state. Lights up the line under
+      // the cursor before the user commits with a click. The parcels source
+      // has generateId: true which assigns each feature an integer id that
+      // backs the feature-state lookup.
+      //
+      // MapLibre style spec rejects feature-state in `filter` ("data
+      // expressions not supported with filters") so the layer paints every
+      // feature, but at zero opacity unless hover is true. Cost is a single
+      // additional line draw call per frame at zoom >= 13.
+      m.addLayer({
+        id: 'parcels-hover',
+        type: 'line',
+        source: 'parcels',
+        minzoom: 13,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#D4882F', // copper-bright — warm pre-selection
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 1.2, 18, 2.8],
+          'line-opacity': [
+            'case',
+            ['boolean', ['feature-state', 'hover'], false],
+            1,
+            0,
+          ],
         },
       })
 
@@ -357,7 +382,11 @@ export default function ParcelMap() {
         minzoom: 13,
         filter: ['==', ['get', 'OBJECTID'], NO_SELECTION],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#fbbf24', 'line-width': 3.5, 'line-opacity': 1 },
+        paint: {
+          'line-color': '#B8732E', // copper — same as chrome wordmark
+          'line-width': 3.5,
+          'line-opacity': 1,
+        },
       })
 
       loadRef.current(m)
@@ -385,8 +414,29 @@ export default function ParcelMap() {
       const f = raw as unknown as ParcelFeature
       selectRef.current(f, m)
     })
+    // Cursor hint + hover highlight via feature-state. Track the last hovered
+    // feature id so we can clear its state when mousemove crosses to a new one.
+    let hoveredId: number | string | null = null
+    const clearHover = () => {
+      if (hoveredId != null) {
+        m.setFeatureState({ source: 'parcels', id: hoveredId }, { hover: false })
+        hoveredId = null
+      }
+    }
     m.on('mouseenter', 'parcels-fill', () => (m.getCanvas().style.cursor = 'pointer'))
-    m.on('mouseleave', 'parcels-fill', () => (m.getCanvas().style.cursor = ''))
+    m.on('mousemove', 'parcels-fill', (e) => {
+      const f = e.features?.[0]
+      if (!f || f.id == null) return
+      if (hoveredId !== f.id) {
+        clearHover()
+        hoveredId = f.id
+        m.setFeatureState({ source: 'parcels', id: hoveredId }, { hover: true })
+      }
+    })
+    m.on('mouseleave', 'parcels-fill', () => {
+      m.getCanvas().style.cursor = ''
+      clearHover()
+    })
 
     map.current = m
     // Expose for E2E tests only — see src/types/global.d.ts
@@ -660,7 +710,11 @@ export default function ParcelMap() {
   }, [flyToFeature, selectParcel])
 
   return (
-    <div className="relative h-full w-full">
+    <div
+      className="relative h-full w-full"
+      role="application"
+      aria-label="Tennessee parcel map — pan and zoom to explore parcels"
+    >
       <div
         ref={mapContainer}
         style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
@@ -1014,18 +1068,6 @@ export default function ParcelMap() {
         </div>
       )}
 
-      {/* County color legend — top-left, below the pills, only on tablet+
-          (mobile is too tight). The colors echo the parcel-line/-fill colors
-          so users can read which county each polygon belongs to without
-          tapping. */}
-      <div className="absolute top-16 left-3 z-10 hidden sm:block pointer-events-none">
-        <Card className="p-2.5 space-y-1 pointer-events-auto">
-          <div className="text-[10px] uppercase tracking-wider text-brand-stone font-medium">Counties</div>
-          <LegendItem color="#22c55e" label="Sullivan" />
-          <LegendItem color="#0ea5e9" label="Washington" />
-          <LegendItem color="#a855f7" label="Carter" />
-        </Card>
-      </div>
     </div>
   )
 }
@@ -1343,11 +1385,3 @@ function ActionBarButton({
   )
 }
 
-function LegendItem({ color, label }: { color: string; label: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
-      <span className="text-[11px] text-brand-parchment">{label}</span>
-    </div>
-  )
-}
