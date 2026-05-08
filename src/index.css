@@ -2,17 +2,10 @@
 
 @theme {
   --color-brand-navy: #0f172a;
-  --color-brand-slate: #334155;
-  --color-brand-slate-light: #64748b;
+  --color-brand-navy-light: #1e3a5f;
   --color-brand-stone: #94a3b8;
   --color-brand-parchment: #f8fafc;
-  --color-brand-cream: #fffbeb;
-  --color-brand-brass: #b45309;
   --color-brand-copper: #d97706;
-  --color-brand-navy-light: #1e3a5f;
-  --color-sullivan: #22c55e;
-  --color-washington: #0ea5e9;
-  --color-carter: #a855f7;
 }
 
 html, body, #root {
@@ -42,8 +35,6 @@ body {
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { scrollbar-width: none; }
 
-/* Push MapLibre top-right controls below our two-row top bar */
+/* MapLibre's top-right controls would otherwise sit underneath our two-row top
+   bar (logo+search, then county pills). Push them below both rows. */
 .maplibregl-ctrl-top-right { top: 6rem !important; }
-@media (min-width: 640px) {
-  .maplibregl-ctrl-top-right { top: 6rem !important; }
-}

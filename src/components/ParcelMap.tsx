@@ -32,6 +32,12 @@ export default function ParcelMap() {
   const [parcelCount, setParcelCount] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Refs to the latest callbacks so the long-lived map event handlers
+  // (registered once at init) always invoke the current closure. Without this,
+  // the handlers would capture the first render's callbacks and miss state
+  // updates (e.g. activeCounty changes).
+  const loadRef = useRef<(m: maplibregl.Map) => void>(() => {})
+  const selectRef = useRef<(f: ParcelFeature, m: maplibregl.Map) => void>(() => {})
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return
@@ -113,12 +119,12 @@ export default function ParcelMap() {
         paint: { 'line-color': '#fbbf24', 'line-width': 3.5, 'line-opacity': 1 },
       })
 
-      loadParcelsForViewport(m)
+      loadRef.current(m)
     })
 
     m.on('moveend', () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => loadParcelsForViewport(m), 250)
+      debounceRef.current = setTimeout(() => loadRef.current(m), 250)
     })
 
     m.on('click', 'parcels-fill', (e) => {
@@ -128,7 +134,7 @@ export default function ParcelMap() {
       // back to ParcelFeature using the schema we control via the ArcGIS
       // outFields list.
       const f = raw as unknown as ParcelFeature
-      selectParcel(f, m)
+      selectRef.current(f, m)
     })
     m.on('mouseenter', 'parcels-fill', () => (m.getCanvas().style.cursor = 'pointer'))
     m.on('mouseleave', 'parcels-fill', () => (m.getCanvas().style.cursor = ''))
@@ -250,10 +256,16 @@ export default function ParcelMap() {
     map.current?.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], NO_SELECTION])
   }
 
+  // Keep refs in sync with the latest callbacks so the map's persistent
+  // event handlers always see the current state.
   useEffect(() => {
-    if (map.current) {
-      loadParcelsForViewport(map.current)
-    }
+    loadRef.current = loadParcelsForViewport
+    selectRef.current = selectParcel
+  }, [loadParcelsForViewport, selectParcel])
+
+  // Reload parcels when the active county filter changes.
+  useEffect(() => {
+    if (map.current) loadParcelsForViewport(map.current)
   }, [activeCounty, loadParcelsForViewport])
 
   return (

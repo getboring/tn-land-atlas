@@ -2,6 +2,7 @@ name = "tn-land-atlas"
 compatibility_date = "2026-05-08"
 pages_build_output_dir = "dist"
 
-[env.production.vars]
-SUPABASE_URL = ""
-SUPABASE_ANON_KEY = ""
+# SUPABASE_URL and SUPABASE_ANON_KEY are set in the Cloudflare Pages dashboard
+# (Settings -> Environment variables) for both Production and Preview. Do NOT
+# declare them here as empty strings -- that would shadow the dashboard values
+# at deploy time and silently disable enriched property data.
