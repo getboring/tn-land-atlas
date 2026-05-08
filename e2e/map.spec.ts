@@ -162,6 +162,11 @@ test.describe('TN Land Atlas', () => {
     await expect(page.getByRole('button', { name: /Recenter to overview/i })).toBeVisible()
   })
 
+  test('Export control is present in the bottom-right cluster', async ({ page }) => {
+    // maplibre-gl-export adds a button with class .maplibregl-export-control.
+    await expect(page.locator('.maplibregl-export-control')).toHaveCount(1)
+  })
+
   test('Filter sheet opens and toggles a switch', async ({ page }) => {
     // Initial label is "Filter" (no active count). After applying one, the
     // button's accessible name becomes "Filter · 1".

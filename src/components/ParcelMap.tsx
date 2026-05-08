@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import mlcontour from 'maplibre-contour'
+import { MaplibreExportControl } from '@watergis/maplibre-gl-export'
+import '@watergis/maplibre-gl-export/dist/maplibre-gl-export.css'
 import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey, queryParcelsInPolygon } from '@/lib/api'
 import type { ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -243,6 +245,17 @@ export default function ParcelMap() {
     })
     m.addControl(geolocate, 'bottom-right')
     m.addControl(new maplibregl.FullscreenControl(), 'bottom-right')
+    // Export the current map view as PDF / PNG / JPG / SVG. The control adds
+    // a printer icon to the cluster; users pick format + paper size.
+    m.addControl(
+      new MaplibreExportControl({
+        DPI: 300,
+        Filename: 'tn-land-atlas',
+        Crosshair: true,
+        PrintableArea: true,
+      }),
+      'bottom-right',
+    )
     geolocateRef.current = geolocate
 
     m.on('load', () => {
