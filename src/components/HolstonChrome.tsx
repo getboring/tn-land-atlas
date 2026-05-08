@@ -17,12 +17,12 @@ export function HolstonChrome({ centerSlot, rightSlot, children }: HolstonChrome
         role="banner"
         aria-label="Holston Scout navigation"
         className="
-          relative z-[--z-chrome] flex-none
-          h-[--spacing-chrome-mobile] sm:h-[--spacing-chrome]
+          relative z-[300] flex-none
+          h-12 sm:h-[52px]
           flex items-center px-4 gap-4
           bg-brand-navy-deep
           border-b border-brand-copper/20
-          shadow-[--shadow-chrome]
+          shadow-[0_1px_3px_rgba(17,29,41,0.4)]
         "
       >
         {/* Left: brand wordmark — Survey Corner mark + Holston Scout */}
@@ -63,7 +63,7 @@ export function HolstonChrome({ centerSlot, rightSlot, children }: HolstonChrome
       </header>
 
       {/* ── Main content (map fills remaining space) ──── */}
-      <main className="flex-1 relative z-[--z-map] overflow-hidden">
+      <main className="flex-1 relative z-0 overflow-hidden">
         {children}
       </main>
     </div>

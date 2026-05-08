@@ -1383,7 +1383,7 @@ function ParcelInsights({
               href={appleMapsUrl(c[0], c[1], p.ADDRESS ?? undefined)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-brand-parchment border border-brand-stone/20 hover:bg-white/10"
+              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-brand-parchment border border-brand-stone/20 hover:bg-white/10"
             >
               Apple Maps
             </a>
@@ -1393,7 +1393,7 @@ function ParcelInsights({
               href={googleMapsUrl(c[0], c[1])}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-brand-parchment border border-brand-stone/20 hover:bg-white/10"
+              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-brand-parchment border border-brand-stone/20 hover:bg-white/10"
             >
               Google Maps
             </a>
@@ -1403,7 +1403,7 @@ function ParcelInsights({
               href={googleStreetViewUrl(c[0], c[1])}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-brand-parchment border border-brand-stone/20 hover:bg-white/10"
+              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-brand-parchment border border-brand-stone/20 hover:bg-white/10"
             >
               Street View
             </a>
@@ -1412,7 +1412,7 @@ function ParcelInsights({
             <button
               type="button"
               onClick={() => onSearchOwner(ownerForSearch)}
-              className="inline-flex items-center justify-center h-9 px-3 rounded-lg text-[11px] font-medium bg-brand-copper/20 text-white border border-brand-copper/40 hover:bg-brand-copper/30"
+              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-brand-copper/20 text-white border border-brand-copper/40 hover:bg-brand-copper/30"
             >
               More by {ownerForSearch}
             </button>
