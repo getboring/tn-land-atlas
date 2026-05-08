@@ -32,10 +32,6 @@ body {
   border-top-color: rgba(15, 23, 42, 0.95) !important;
 }
 
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-.scrollbar-hide { scrollbar-width: none; }
-
-
 /* iOS / Android: kill the 300ms tap delay and prevent text selection on
    double-tap of buttons. This is the 2026 best-practice baseline (a button
    should never be a text-selection trigger). */
