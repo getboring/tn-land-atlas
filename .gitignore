@@ -25,3 +25,9 @@ dist-ssr
 /test-results/
 /playwright-report/
 /playwright/.cache/
+
+# Serena MCP cache (not part of the project)
+/.serena/
+
+# Wrangler local state
+/.wrangler/
