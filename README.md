@@ -37,16 +37,15 @@ A real-estate-focused parcel mapping app for **Sullivan, Washington, and Carter 
 
 ```bash
 cd ~/tn-land-atlas
-
-# Optional: add Supabase credentials for enriched data
-cp .env.example .env
-# edit .env with your Supabase URL + anon key
-
 npm install
 npm run dev          # http://localhost:5173 (Vite alone)
 # or
 npx wrangler pages dev dist --port 5180   # full stack (Functions + static)
 ```
+
+Supabase credentials live on the Cloudflare Pages project (`SUPABASE_URL`,
+`SUPABASE_ANON_KEY`) — they are read by `functions/api/property.ts` and never
+reach the browser. See `.env.example`.
 
 ## Live
 

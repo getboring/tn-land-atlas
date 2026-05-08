@@ -1,4 +1,6 @@
-import { supabase } from './supabase'
+// Type-only definitions for the enriched property data returned by /api/property.
+// The runtime Supabase client used to live alongside these — it has been removed in
+// favor of the server-side proxy in functions/api/property.ts.
 
 export interface BuildingRecord {
   parcel_key: string
@@ -47,71 +49,9 @@ export interface EntityRecord {
   aliases: string[]
 }
 
-export interface PersonProperty {
-  canonical_name: string
-  relationship: string
-  parcel_count: number
-  total_assessed_value: number
-}
-
-export async function getBuildings(parcelKey: string): Promise<BuildingRecord[]> {
-  const { data, error } = await supabase
-    .from('buildings')
-    .select('*')
-    .eq('parcel_key', parcelKey)
-  if (error) throw error
-  return data || []
-}
-
-export async function getValuation(parcelKey: string): Promise<ValuationRecord | null> {
-  const { data, error } = await supabase
-    .from('valuations')
-    .select('*')
-    .eq('parcel_key', parcelKey)
-    .maybeSingle()
-  if (error) throw error
-  return data
-}
-
-export async function getSales(parcelKey: string): Promise<SaleRecord[]> {
-  const { data, error } = await supabase
-    .from('sales')
-    .select('*')
-    .eq('parcel_key', parcelKey)
-    .gt('price', 0)
-    .order('sale_date', { ascending: false })
-  if (error) throw error
-  return data || []
-}
-
-export async function getEntitiesForParcel(parcelKey: string): Promise<EntityRecord[]> {
-  const { data: links, error: linkErr } = await supabase
-    .from('property_entities')
-    .select('entity_id')
-    .eq('parcel_key', parcelKey)
-  if (linkErr) throw linkErr
-  if (!links?.length) return []
-
-  const { data, error } = await supabase
-    .from('entities')
-    .select('*')
-    .in('id', links.map((l) => l.entity_id))
-  if (error) throw error
-  return data || []
-}
-
-export async function getPersonsForParcel(parcelKey: string): Promise<PersonProperty[]> {
-  const { data, error } = await supabase
-    .from('person_parcels')
-    .select('person_id, ownership_type, persons(canonical_name, relationship_to_subject)')
-    .eq('parcel_key', parcelKey)
-  if (error) throw error
-  if (!data) return []
-
-  return data.map((row: any) => ({
-    canonical_name: row.persons?.canonical_name || 'Unknown',
-    relationship: row.persons?.relationship_to_subject || '',
-    parcel_count: 0,
-    total_assessed_value: 0,
-  }))
+export interface PropertyData {
+  buildings: BuildingRecord[]
+  valuation: ValuationRecord | null
+  sales: SaleRecord[]
+  entities: EntityRecord[]
 }

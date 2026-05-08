@@ -1,18 +1,17 @@
-import type { BuildingRecord, ValuationRecord, SaleRecord, EntityRecord } from './supabase-queries'
-import { queryParcelsByBbox as directQueryParcelsByBbox, searchParcels as directSearchParcels } from './arcgis'
-import { getBuildings, getValuation, getSales, getEntitiesForParcel } from './supabase-queries'
+import type { PropertyData } from './supabase-queries'
+import type { ParcelCollection } from './arcgis'
 
-async function post<T>(path: string, body: object): Promise<T> {
+async function postJson<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!res.ok) {
-    const text = await res.text().catch(() => 'Network error')
-    throw new Error(`API ${path} ${res.status}: ${text}`)
+    const text = await res.text().catch(() => '')
+    throw new Error(`API ${path} ${res.status}${text ? `: ${text}` : ''}`)
   }
-  return res.json()
+  return res.json() as Promise<T>
 }
 
 export async function queryParcelsByBbox(
@@ -21,40 +20,25 @@ export async function queryParcelsByBbox(
   east: number,
   north: number,
   county: string,
-  signal?: AbortSignal
-): Promise<GeoJSON.FeatureCollection> {
-  try {
-    return await post('/api/parcels', { west, south, east, north, county })
-  } catch {
-    // Fallback to direct ArcGIS call (for local dev without Functions)
-    return directQueryParcelsByBbox(west, south, east, north, county, signal)
+  signal?: AbortSignal,
+): Promise<ParcelCollection> {
+  const res = await fetch('/api/parcels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ west, south, east, north, county }),
+    signal,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`API /api/parcels ${res.status}${text ? `: ${text}` : ''}`)
   }
+  return res.json() as Promise<ParcelCollection>
 }
 
-export async function searchParcels(query: string, county: string): Promise<GeoJSON.FeatureCollection> {
-  try {
-    return await post('/api/search', { query, county })
-  } catch {
-    return directSearchParcels(query, county)
-  }
+export async function searchParcels(query: string, county: string): Promise<ParcelCollection> {
+  return postJson<ParcelCollection>('/api/search', { query, county })
 }
 
-export async function getPropertyData(parcelKey: string): Promise<{
-  buildings: BuildingRecord[]
-  valuation: ValuationRecord | null
-  sales: SaleRecord[]
-  entities: EntityRecord[]
-}> {
-  try {
-    return await post('/api/property', { parcelKey })
-  } catch {
-    // Fallback to direct Supabase calls
-    const [buildings, valuation, sales, entities] = await Promise.all([
-      getBuildings(parcelKey).catch(() => []),
-      getValuation(parcelKey).catch(() => null),
-      getSales(parcelKey).catch(() => []),
-      getEntitiesForParcel(parcelKey).catch(() => []),
-    ])
-    return { buildings, valuation, sales, entities }
-  }
+export async function getPropertyData(parcelKey: string): Promise<PropertyData> {
+  return postJson<PropertyData>('/api/property', { parcelKey })
 }

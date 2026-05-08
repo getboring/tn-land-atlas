@@ -7,7 +7,13 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Search, X, Layers, Crosshair, Building2, TrendingUp, Users } from 'lucide-react'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
-import type { BuildingRecord, ValuationRecord, SaleRecord, EntityRecord } from '@/lib/supabase-queries'
+import type { PropertyData } from '@/lib/supabase-queries'
+
+const NO_SELECTION: number = -1
+
+function isAbortError(e: unknown): boolean {
+  return e instanceof DOMException && e.name === 'AbortError'
+}
 
 const COUNTIES = ['ALL', 'Sullivan', 'Washington', 'Carter'] as const
 type County = (typeof COUNTIES)[number]
@@ -20,12 +26,7 @@ export default function ParcelMap() {
   const [baseLayer, setBaseLayer] = useState<'esri' | 'naip'>('esri')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedParcel, setSelectedParcel] = useState<ParcelFeature | null>(null)
-  const [enriched, setEnriched] = useState<{
-    buildings: BuildingRecord[]
-    valuation: ValuationRecord | null
-    sales: SaleRecord[]
-    entities: EntityRecord[]
-  } | null>(null)
+  const [enriched, setEnriched] = useState<PropertyData | null>(null)
   const [enrichLoading, setEnrichLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [parcelCount, setParcelCount] = useState(0)
@@ -108,7 +109,7 @@ export default function ParcelMap() {
         id: 'parcels-selected',
         type: 'line',
         source: 'parcels',
-        filter: ['==', ['get', 'OBJECTID'], ''],
+        filter: ['==', ['get', 'OBJECTID'], NO_SELECTION],
         paint: { 'line-color': '#fbbf24', 'line-width': 3.5, 'line-opacity': 1 },
       })
 
@@ -121,15 +122,20 @@ export default function ParcelMap() {
     })
 
     m.on('click', 'parcels-fill', (e) => {
-      const f = e.features?.[0] as unknown as ParcelFeature
-      if (f) selectParcel(f, m)
+      const raw = e.features?.[0]
+      if (!raw) return
+      // MapLibre's MapGeoJSONFeature widens properties to a Record. We narrow
+      // back to ParcelFeature using the schema we control via the ArcGIS
+      // outFields list.
+      const f = raw as unknown as ParcelFeature
+      selectParcel(f, m)
     })
     m.on('mouseenter', 'parcels-fill', () => (m.getCanvas().style.cursor = 'pointer'))
     m.on('mouseleave', 'parcels-fill', () => (m.getCanvas().style.cursor = ''))
 
     map.current = m
-    // Expose for E2E tests
-    ;(window as any).__map__ = m
+    // Expose for E2E tests only — see src/types/global.d.ts
+    window.__map__ = m
 
     const ro = new ResizeObserver(() => m.resize())
     ro.observe(mapContainer.current)
@@ -139,15 +145,16 @@ export default function ParcelMap() {
       ro.disconnect()
       m.remove()
       map.current = null
-      delete (window as any).__map__
+      delete window.__map__
     }
   }, [])
 
   const loadParcelsForViewport = useCallback(async (m: maplibregl.Map) => {
     if (!parcelsVisible) return
+    const src = m.getSource('parcels') as maplibregl.GeoJSONSource | undefined
     const zoom = m.getZoom()
     if (zoom < 13) {
-      ;(m.getSource('parcels') as maplibregl.GeoJSONSource)?.setData({ type: 'FeatureCollection', features: [] })
+      src?.setData({ type: 'FeatureCollection', features: [] })
       setParcelCount(0)
       return
     }
@@ -157,10 +164,13 @@ export default function ParcelMap() {
     setLoading(true)
     try {
       const data = await queryParcelsByBbox(b.getWest(), b.getSouth(), b.getEast(), b.getNorth(), activeCounty, abortRef.current.signal)
-      ;(m.getSource('parcels') as maplibregl.GeoJSONSource)?.setData(data as any)
+      src?.setData(data as GeoJSON.FeatureCollection)
       setParcelCount(data.features?.length || 0)
-    } catch {
-      // aborted or failed
+    } catch (e) {
+      if (!isAbortError(e)) {
+        console.error('[parcels] viewport load failed', e)
+        setParcelCount(0)
+      }
     } finally {
       setLoading(false)
     }
@@ -168,16 +178,19 @@ export default function ParcelMap() {
 
   const selectParcel = useCallback(async (f: ParcelFeature, m: maplibregl.Map) => {
     setSelectedParcel(f)
-    const id = f.properties.OBJECTID as string | number
-    m.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], id])
+    m.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], f.properties.OBJECTID])
 
-    const gislink = f.properties.GISLINK as string
-    if (!gislink) return
+    const gislink = f.properties.GISLINK
+    if (!gislink) {
+      setEnriched(null)
+      return
+    }
     setEnrichLoading(true)
     try {
       const data = await getPropertyData(gislink)
       setEnriched(data)
-    } catch {
+    } catch (e) {
+      console.error('[property] enrichment failed', e)
       setEnriched(null)
     } finally {
       setEnrichLoading(false)
@@ -190,11 +203,12 @@ export default function ParcelMap() {
     try {
       const data = await searchParcels(searchQuery, activeCounty)
       if (data.features?.length) {
-        ;(map.current.getSource('parcels') as maplibregl.GeoJSONSource)?.setData(data as any)
+        const src = map.current.getSource('parcels') as maplibregl.GeoJSONSource | undefined
+        src?.setData(data as GeoJSON.FeatureCollection)
         setParcelCount(data.features.length)
-        const f = data.features[0] as ParcelFeature
+        const f = data.features[0]
         selectParcel(f, map.current)
-        const coords = (f.geometry as GeoJSON.Polygon).coordinates[0]
+        const coords = f.geometry.coordinates[0]
         const lons = coords.map((c) => c[0])
         const lats = coords.map((c) => c[1])
         map.current.fitBounds(
@@ -202,6 +216,8 @@ export default function ParcelMap() {
           { padding: 120, maxZoom: 17 }
         )
       }
+    } catch (e) {
+      console.error('[search] failed', e)
     } finally {
       setLoading(false)
     }
@@ -231,7 +247,7 @@ export default function ParcelMap() {
   const clearSelection = () => {
     setSelectedParcel(null)
     setEnriched(null)
-    map.current?.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], ''])
+    map.current?.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], NO_SELECTION])
   }
 
   useEffect(() => {
@@ -256,6 +272,8 @@ export default function ParcelMap() {
 
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <input
+            type="search"
+            aria-label="Search owner or address"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && doSearch()}
@@ -281,11 +299,16 @@ export default function ParcelMap() {
       </div>
 
       {/* Top bar — row 2: county filter pills (horizontally scrollable on mobile) */}
-      <div className="absolute top-16 left-3 right-3 z-10 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+      <div
+        role="group"
+        aria-label="County filter"
+        className="absolute top-16 left-3 right-3 z-10 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide"
+      >
         {COUNTIES.map((c) => (
           <button
             key={c}
             onClick={() => setActiveCounty(c)}
+            aria-pressed={activeCounty === c}
             className={cn(
               'px-3 py-1 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap shrink-0',
               activeCounty === c
@@ -298,17 +321,18 @@ export default function ParcelMap() {
         ))}
       </div>
 
-      {/* Loading indicator */}
-      {loading && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 px-4 py-1.5 rounded-full bg-brand-navy/90 border border-brand-stone/20 text-xs text-white">
-          Loading…
-        </div>
-      )}
-
-      {/* Parcel count */}
-      {parcelCount > 0 && !loading && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 px-4 py-1.5 rounded-full bg-brand-navy/90 border border-brand-stone/20 text-xs text-brand-stone">
-          {parcelCount} parcels visible
+      {/* Single status pill — loading takes precedence over count to avoid
+          one-frame overlap during the load -> loaded transition. */}
+      {(loading || parcelCount > 0) && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={cn(
+            'absolute bottom-6 left-1/2 -translate-x-1/2 z-10 px-4 py-1.5 rounded-full bg-brand-navy/90 border border-brand-stone/20 text-xs',
+            loading ? 'text-white' : 'text-brand-stone',
+          )}
+        >
+          {loading ? 'Loading…' : `${parcelCount} parcels visible`}
         </div>
       )}
 
@@ -319,24 +343,24 @@ export default function ParcelMap() {
             <CardHeader className="pb-2">
               <div className="flex items-start justify-between">
                 <CardTitle className="text-sm">Property Details</CardTitle>
-                <button onClick={clearSelection} className="text-brand-stone hover:text-white"><X className="w-4 h-4" /></button>
+                <button onClick={clearSelection} aria-label="Close property details" className="text-brand-stone hover:text-white"><X className="w-4 h-4" /></button>
               </div>
             </CardHeader>
             <CardContent className="space-y-3 text-xs">
-              <DetailField label="Parcel ID" value={selectedParcel.properties.GISLINK as string} />
+              <DetailField label="Parcel ID" value={selectedParcel.properties.GISLINK} />
               <DetailField label="Owner" value={[selectedParcel.properties.OWNER, selectedParcel.properties.OWNER2].filter(Boolean).join('\n')} />
-              <DetailField label="Address" value={selectedParcel.properties.ADDRESS as string || `${selectedParcel.properties.ST_NUM} ${selectedParcel.properties.STREET}`} />
-              <DetailField label="County" value={selectedParcel.properties.COUNTYNAME as string} />
-              <DetailField label="Acres" value={selectedParcel.properties.CALC_ACRE ? `${Number(selectedParcel.properties.CALC_ACRE).toFixed(3)} ac` : '—'} />
-              <DetailField label="Property Type" value={selectedParcel.properties.PROPTYPE as string} />
-              <DetailField label="Zoning" value={selectedParcel.properties.ZONING as string} />
-              <DetailField label="Appraised Value" value={fmtMoney(selectedParcel.properties.APPRAISAL as number)} />
-              <DetailField label="Last Sale Price" value={fmtMoney(selectedParcel.properties.PRICE as number)} />
-              <DetailField label="Last Sale Date" value={fmtDate(selectedParcel.properties.SALEDATE as string)} />
-              <DetailField label="Sale Label" value={selectedParcel.properties.SALELABEL as string} />
-              <DetailField label="Mailing Address" value={selectedParcel.properties.MAILADDR as string} />
+              <DetailField label="Address" value={selectedParcel.properties.ADDRESS || `${selectedParcel.properties.ST_NUM ?? ''} ${selectedParcel.properties.STREET ?? ''}`.trim()} />
+              <DetailField label="County" value={selectedParcel.properties.COUNTYNAME} />
+              <DetailField label="Acres" value={selectedParcel.properties.CALC_ACRE != null ? `${selectedParcel.properties.CALC_ACRE.toFixed(3)} ac` : '—'} />
+              <DetailField label="Property Type" value={selectedParcel.properties.PROPTYPE} />
+              <DetailField label="Zoning" value={selectedParcel.properties.ZONING} />
+              <DetailField label="Appraised Value" value={fmtMoney(selectedParcel.properties.APPRAISAL)} />
+              <DetailField label="Last Sale Price" value={fmtMoney(selectedParcel.properties.PRICE)} />
+              <DetailField label="Last Sale Date" value={fmtDate(selectedParcel.properties.SALEDATE)} />
+              <DetailField label="Sale Label" value={selectedParcel.properties.SALELABEL} />
+              <DetailField label="Mailing Address" value={selectedParcel.properties.MAILADDR} />
               <DetailField label="Mail City/ST/ZIP" value={`${selectedParcel.properties.MAILCITY || ''}, ${selectedParcel.properties.STATE || ''} ${selectedParcel.properties.ZIP || ''}`} />
-              <DetailField label="Lat/Lng" value={`${Number(selectedParcel.properties.LATITUDE).toFixed(6)}, ${Number(selectedParcel.properties.LONGITUDE).toFixed(6)}`} />
+              <DetailField label="Lat/Lng" value={selectedParcel.properties.LATITUDE != null && selectedParcel.properties.LONGITUDE != null ? `${selectedParcel.properties.LATITUDE.toFixed(6)}, ${selectedParcel.properties.LONGITUDE.toFixed(6)}` : '—'} />
 
               {enrichLoading && (
                 <div className="py-2 text-brand-stone animate-pulse">Loading enriched data…</div>
