@@ -95,7 +95,7 @@ test.describe('TN Land Atlas', () => {
   test('map loads with title and controls', async ({ page }) => {
     // The title text is hidden on mobile to fit; the logo container retains
     // an aria-label so it remains discoverable.
-    await expect(page.locator('[aria-label="TN Land Atlas"]')).toBeVisible()
+    await expect(page.locator('[aria-label="Holston Scout navigation"]')).toBeVisible()
     await expect(page.locator('.maplibregl-ctrl-zoom-in')).toBeVisible()
     await expect(page.locator('.maplibregl-ctrl-zoom-out')).toBeVisible()
     await expect(page.locator('.maplibregl-ctrl-fullscreen')).toBeVisible()
@@ -223,7 +223,7 @@ test.describe('TN Land Atlas', () => {
   })
 
   test('responsive layout adapts to viewport', async ({ page }) => {
-    await expect(page.locator('[aria-label="TN Land Atlas"]')).toBeVisible()
+    await expect(page.locator('[aria-label="Holston Scout navigation"]')).toBeVisible()
     await expect(page.getByPlaceholder('Search owner or address…')).toBeVisible()
   })
 

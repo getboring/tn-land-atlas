@@ -8,7 +8,7 @@ import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey, que
 import type { ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Search, X, MapPinned, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter } from 'lucide-react'
+import { Search, X, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter } from 'lucide-react'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
 import type { PropertyData } from '@/lib/supabase-queries'
 import { parsePermalink, updateAddressBar, DEFAULT_MAP_VIEW } from '@/lib/permalink'
@@ -259,6 +259,10 @@ export default function ParcelMap() {
     geolocateRef.current = geolocate
 
     m.on('load', () => {
+      // Defensive resize so the canvas matches the post-mount flex container
+      // size (HolstonChrome takes a fixed 48-52px slice off the top; the map
+      // gets the remainder via flex-1).
+      m.resize()
       // Contour source: vector tiles generated on-the-fly from the DEM raster.
       // multiplier 3.28084 converts meters -> feet (TN convention).
       // thresholds: at each zoom, [minor interval, major interval] in feet.
@@ -666,16 +670,7 @@ export default function ParcelMap() {
           All tap targets are at least 40px tall (WCAG 2.5.5 AA / iOS HIG comfortable).
           pointer-events-none on the wrapper so map clicks pass through any
           empty space between the buttons; pointer-events-auto on each child. */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2 pointer-events-none [&>*]:pointer-events-auto safe-top">
-        <div
-          className="flex items-center gap-2 rounded-xl bg-brand-navy/90 backdrop-blur border border-brand-stone/15 px-3 h-10 shrink-0"
-          aria-label="TN Land Atlas"
-          title="TN Land Atlas"
-        >
-          <MapPinned className="w-4 h-4 text-brand-copper" />
-          <span className="text-sm font-bold text-white whitespace-nowrap hidden sm:inline">TN Land Atlas</span>
-        </div>
-
+      <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2 pointer-events-none [&>*]:pointer-events-auto">
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <div className="relative flex-1 min-w-0">
             <input
