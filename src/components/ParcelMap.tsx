@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { queryParcelsByBbox, searchParcels, getPropertyData } from '@/lib/api'
+import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey } from '@/lib/api'
 import type { ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Search, X, Layers, Crosshair, Building2, TrendingUp, Users } from 'lucide-react'
+import { Search, X, Layers, Crosshair, Building2, TrendingUp, Users, Share2, Check } from 'lucide-react'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
 import type { PropertyData } from '@/lib/supabase-queries'
+import { parsePermalink, updateAddressBar, DEFAULT_MAP_VIEW } from '@/lib/permalink'
 
 const NO_SELECTION: number = -1
 
@@ -83,8 +84,10 @@ export default function ParcelMap() {
   const [loading, setLoading] = useState(false)
   const [parcelCount, setParcelCount] = useState(0)
   const [searchResults, setSearchResults] = useState<ParcelFeature[] | null>(null)
+  const [shareCopied, setShareCopied] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const initialPermalink = useRef(parsePermalink(window.location.search))
   // Refs to the latest callbacks so the long-lived map event handlers
   // (registered once at init) always invoke the current closure. Without this,
   // the handlers would capture the first render's callbacks and miss state
@@ -95,23 +98,36 @@ export default function ParcelMap() {
   useEffect(() => {
     if (!mapContainer.current || map.current) return
 
+    // East-TN bounding box. Mirrors functions/api/_validate.ts so the basemap
+    // doesn't request tiles outside the area we care about.
+    const TN_BOUNDS: [number, number, number, number] = [-90.5, 34.5, -81.5, 37.0]
+
     const m = new maplibregl.Map({
       container: mapContainer.current,
       style: {
         version: 8,
+        name: 'TN Land Atlas',
+        metadata: { 'tn-land-atlas:counties': ['Sullivan', 'Washington', 'Carter'] },
         sources: {
           'esri-imagery': {
             type: 'raster',
             tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
             tileSize: 256,
-            attribution: 'Esri',
+            minzoom: 0,
+            maxzoom: 19,
+            bounds: TN_BOUNDS,
+            attribution:
+              'Imagery © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics',
           },
           'usgs-naip': {
             type: 'raster',
             tiles: ['https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}'],
             tileSize: 256,
+            minzoom: 0,
             maxzoom: 16,
-            attribution: 'USGS NAIP',
+            bounds: TN_BOUNDS,
+            attribution:
+              'Imagery © <a href="https://basemap.nationalmap.gov/" target="_blank" rel="noopener">U.S. Geological Survey</a> NAIP',
           },
         },
         layers: [
@@ -119,8 +135,11 @@ export default function ParcelMap() {
           { id: 'usgs-naip', type: 'raster', source: 'usgs-naip', minzoom: 0, maxzoom: 22, layout: { visibility: 'none' } },
         ],
       },
-      center: [-82.35, 36.35],
-      zoom: 11,
+      center: [
+        initialPermalink.current.view?.lng ?? DEFAULT_MAP_VIEW.lng,
+        initialPermalink.current.view?.lat ?? DEFAULT_MAP_VIEW.lat,
+      ],
+      zoom: initialPermalink.current.view?.zoom ?? DEFAULT_MAP_VIEW.zoom,
       maxZoom: 19,
     })
 
@@ -129,21 +148,32 @@ export default function ParcelMap() {
     m.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'top-right')
 
     m.on('load', () => {
-      m.addSource('parcels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+      m.addSource('parcels', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        attribution:
+          'Parcels: <a href="https://gis.johnsoncitytn.org/" target="_blank" rel="noopener">Johnson City, TN GIS</a>',
+        // generateId lets us use feature-state for hover/selection later without
+        // requiring a stable id on the GeoJSON itself.
+        generateId: true,
+      })
 
       m.addLayer({
         id: 'parcels-fill',
         type: 'fill',
         source: 'parcels',
+        // minzoom matches loadParcelsForViewport's zoom < 13 early-return.
+        // No point in even attempting to paint at lower zooms.
+        minzoom: 13,
         paint: {
           'fill-color': [
             'match', ['get', 'COUNTYNAME'],
-            'Sullivan County', 'rgba(34,197,94,0.10)',
-            'Washington County', 'rgba(14,165,233,0.10)',
-            'Carter County', 'rgba(168,85,247,0.10)',
-            'rgba(148,163,184,0.06)',
+            'Sullivan County', '#22c55e',
+            'Washington County', '#0ea5e9',
+            'Carter County', '#a855f7',
+            '#94a3b8',
           ],
-          'fill-outline-color': 'rgba(255,255,255,0.08)',
+          'fill-opacity': 0.10,
         },
       })
 
@@ -151,6 +181,8 @@ export default function ParcelMap() {
         id: 'parcels-line',
         type: 'line',
         source: 'parcels',
+        minzoom: 13,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': [
             'match', ['get', 'COUNTYNAME'],
@@ -168,7 +200,9 @@ export default function ParcelMap() {
         id: 'parcels-selected',
         type: 'line',
         source: 'parcels',
+        minzoom: 13,
         filter: ['==', ['get', 'OBJECTID'], NO_SELECTION],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': '#fbbf24', 'line-width': 3.5, 'line-opacity': 1 },
       })
 
@@ -178,6 +212,14 @@ export default function ParcelMap() {
     m.on('moveend', () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => loadRef.current(m), 250)
+      // Sync map view -> URL so reload / share preserves position.
+      const c = m.getCenter()
+      const params = new URLSearchParams(window.location.search)
+      const parcel = params.get('parcel')
+      updateAddressBar({
+        view: { lng: c.lng, lat: c.lat, zoom: m.getZoom() },
+        parcelKey: parcel,
+      })
     })
 
     m.on('click', 'parcels-fill', (e) => {
@@ -240,6 +282,13 @@ export default function ParcelMap() {
     m.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], f.properties.OBJECTID])
 
     const gislink = f.properties.GISLINK
+    // Sync selection to URL.
+    const c = m.getCenter()
+    updateAddressBar({
+      view: { lng: c.lng, lat: c.lat, zoom: m.getZoom() },
+      parcelKey: gislink ?? null,
+    })
+
     if (!gislink) {
       setEnriched(null)
       return
@@ -327,7 +376,24 @@ export default function ParcelMap() {
     setSelectedParcel(null)
     setEnriched(null)
     map.current?.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], NO_SELECTION])
+    if (map.current) {
+      const c = map.current.getCenter()
+      updateAddressBar({
+        view: { lng: c.lng, lat: c.lat, zoom: map.current.getZoom() },
+        parcelKey: null,
+      })
+    }
   }
+
+  const sharePermalink = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 1800)
+    } catch (e) {
+      console.error('[share] clipboard write failed', e)
+    }
+  }, [])
 
   // Keep refs in sync with the latest callbacks so the map's persistent
   // event handlers always see the current state.
@@ -340,6 +406,29 @@ export default function ParcelMap() {
   useEffect(() => {
     if (map.current) loadParcelsForViewport(map.current)
   }, [activeCounty, loadParcelsForViewport])
+
+  // Resolve the initial ?parcel= URL param exactly once. Fly to it and select.
+  useEffect(() => {
+    const key = initialPermalink.current.parcelKey
+    if (!key || !map.current) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const f = await getParcelByKey(key)
+        if (cancelled || !map.current) return
+        // If the URL didn't include a view, frame the parcel we're loading.
+        if (!initialPermalink.current.view) {
+          flyToFeature(f, map.current)
+        }
+        selectParcel(f, map.current)
+      } catch (e) {
+        console.error('[permalink] parcel lookup failed', e)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [flyToFeature, selectParcel])
 
   return (
     <div className="relative h-full w-full">
@@ -508,15 +597,25 @@ export default function ParcelMap() {
         <div className="absolute top-28 right-3 left-3 sm:left-auto z-20 sm:w-80 max-h-[calc(100%-9rem)] overflow-y-auto">
           <Card>
             <CardHeader className="pb-2">
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-1">
                 <CardTitle className="text-sm">Property Details</CardTitle>
-                <button
-                  onClick={clearSelection}
-                  aria-label="Close property details"
-                  className="inline-flex items-center justify-center w-10 h-10 -mr-2 -mt-2 rounded-md text-brand-stone hover:text-white hover:bg-white/10"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+                <div className="flex items-center -mr-2 -mt-2">
+                  <button
+                    onClick={sharePermalink}
+                    aria-label="Copy share link"
+                    className="inline-flex items-center justify-center w-10 h-10 rounded-md text-brand-stone hover:text-white hover:bg-white/10"
+                    title={shareCopied ? 'Link copied' : 'Copy link to this parcel'}
+                  >
+                    {shareCopied ? <Check className="w-4 h-4 text-green-400" /> : <Share2 className="w-4 h-4" />}
+                  </button>
+                  <button
+                    onClick={clearSelection}
+                    aria-label="Close property details"
+                    className="inline-flex items-center justify-center w-10 h-10 rounded-md text-brand-stone hover:text-white hover:bg-white/10"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-3 text-xs">

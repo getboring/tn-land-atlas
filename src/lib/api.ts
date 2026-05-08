@@ -39,6 +39,15 @@ export async function searchParcels(query: string, county: string): Promise<Parc
   return postJson<ParcelCollection>('/api/search', { query, county })
 }
 
+export async function getParcelByKey(key: string): Promise<import('./arcgis').ParcelFeature> {
+  const res = await fetch(`/api/parcel?key=${encodeURIComponent(key)}`)
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`API /api/parcel ${res.status}${text ? `: ${text}` : ''}`)
+  }
+  return res.json() as Promise<import('./arcgis').ParcelFeature>
+}
+
 export async function getPropertyData(parcelKey: string): Promise<PropertyData> {
   return postJson<PropertyData>('/api/property', { parcelKey })
 }

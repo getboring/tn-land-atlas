@@ -203,6 +203,18 @@ test.describe('TN Land Atlas', () => {
     await expect(page.getByPlaceholder('Search owner or address…')).toBeVisible()
   })
 
+  test('map view is reflected in the URL after panning', async ({ page }) => {
+    await page.evaluate(() => {
+      const m = (window as unknown as { __map__?: { jumpTo: (o: object) => void } }).__map__
+      if (m) m.jumpTo({ center: [-82.5, 36.5], zoom: 14 })
+    })
+    await expect.poll(() => new URL(page.url()).searchParams.get('z'), { timeout: 5000 }).not.toBeNull()
+    const params = new URL(page.url()).searchParams
+    expect(Number(params.get('z'))).toBeCloseTo(14, 1)
+    expect(Number(params.get('lat'))).toBeCloseTo(36.5, 1)
+    expect(Number(params.get('lng'))).toBeCloseTo(-82.5, 1)
+  })
+
   test('recenter button resets view', async ({ page }) => {
     await page.evaluate(() => {
       const m = (window as unknown as { __map__?: { jumpTo: (o: object) => void } }).__map__
