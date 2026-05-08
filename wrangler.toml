@@ -1,0 +1,6 @@
+name = "tn-land-atlas"
+compatibility_date = "2026-05-08"
+
+[env.production.vars]
+SUPABASE_URL = ""
+SUPABASE_ANON_KEY = ""
