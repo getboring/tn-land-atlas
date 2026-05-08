@@ -127,10 +127,13 @@ export default function ParcelMap() {
     m.on('mouseleave', 'parcels-fill', () => (m.getCanvas().style.cursor = ''))
 
     map.current = m
+    // Expose for E2E tests
+    ;(window as any).__map__ = m
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
       m.remove()
       map.current = null
+      delete (window as any).__map__
     }
   }, [])
 
