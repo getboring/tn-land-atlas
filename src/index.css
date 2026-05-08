@@ -38,3 +38,12 @@ body {
 .maplibregl-popup-tip {
   border-top-color: rgba(15, 23, 42, 0.95) !important;
 }
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { scrollbar-width: none; }
+
+/* Push MapLibre top-right controls below our two-row top bar */
+.maplibregl-ctrl-top-right { top: 6rem !important; }
+@media (min-width: 640px) {
+  .maplibregl-ctrl-top-right { top: 6rem !important; }
+}

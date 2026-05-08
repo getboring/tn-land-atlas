@@ -50,6 +50,7 @@ export default function ParcelMap() {
             type: 'raster',
             tiles: ['https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}'],
             tileSize: 256,
+            maxzoom: 16,
             attribution: 'USGS NAIP',
           },
         },
@@ -129,8 +130,13 @@ export default function ParcelMap() {
     map.current = m
     // Expose for E2E tests
     ;(window as any).__map__ = m
+
+    const ro = new ResizeObserver(() => m.resize())
+    ro.observe(mapContainer.current)
+
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
+      ro.disconnect()
       m.remove()
       map.current = null
       delete (window as any).__map__
@@ -236,21 +242,52 @@ export default function ParcelMap() {
 
   return (
     <div className="relative h-full w-full">
-      <div ref={mapContainer} className="absolute inset-0" />
+      <div
+        ref={mapContainer}
+        style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 }}
+      />
 
-      {/* Top bar */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-2 rounded-xl bg-brand-navy/90 backdrop-blur border border-brand-stone/15 px-3 py-2">
+      {/* Top bar — row 1: logo + search + view controls (always visible) */}
+      <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-xl bg-brand-navy/90 backdrop-blur border border-brand-stone/15 px-3 py-2 shrink-0">
           <Layers className="w-4 h-4 text-brand-copper" />
           <span className="text-sm font-bold text-white whitespace-nowrap">TN Land Atlas</span>
         </div>
 
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && doSearch()}
+            placeholder="Search owner or address…"
+            className="flex-1 min-w-0 bg-brand-navy/90 backdrop-blur border border-brand-stone/20 text-white text-sm px-3 py-1.5 rounded-lg placeholder:text-brand-stone outline-none focus:border-brand-copper"
+          />
+          <Button size="icon" onClick={doSearch} aria-label="Search">
+            <Search className="w-4 h-4" />
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Button variant="outline" size="sm" onClick={toggleParcels}>
+            {parcelsVisible ? 'Hide' : 'Show'}
+          </Button>
+          <Button variant="outline" size="sm" onClick={toggleBase}>
+            {baseLayer === 'esri' ? 'NAIP' : 'Esri'}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => map.current?.flyTo({ center: [-82.35, 36.35], zoom: 11 })} aria-label="Recenter">
+            <Crosshair className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Top bar — row 2: county filter pills (horizontally scrollable on mobile) */}
+      <div className="absolute top-16 left-3 right-3 z-10 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
         {COUNTIES.map((c) => (
           <button
             key={c}
             onClick={() => setActiveCounty(c)}
             className={cn(
-              'px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors',
+              'px-3 py-1 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap shrink-0',
               activeCounty === c
                 ? 'bg-brand-copper border-brand-copper text-white'
                 : 'bg-brand-navy/90 backdrop-blur border-brand-stone/20 text-brand-parchment hover:bg-white/10'
@@ -259,29 +296,6 @@ export default function ParcelMap() {
             {c === 'ALL' ? 'All' : c}
           </button>
         ))}
-
-        <div className="flex items-center gap-1.5 flex-1 min-w-[160px] max-w-md">
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && doSearch()}
-            placeholder="Search owner or address…"
-            className="flex-1 bg-brand-navy/90 backdrop-blur border border-brand-stone/20 text-white text-sm px-3 py-1.5 rounded-lg placeholder:text-brand-stone outline-none focus:border-brand-copper"
-          />
-          <Button size="icon" onClick={doSearch}><Search className="w-4 h-4" /></Button>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <Button variant="outline" size="sm" onClick={toggleParcels}>
-            {parcelsVisible ? 'Hide' : 'Show'}
-          </Button>
-          <Button variant="outline" size="sm" onClick={toggleBase}>
-            {baseLayer === 'esri' ? 'NAIP' : 'Esri'}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => map.current?.flyTo({ center: [-82.35, 36.35], zoom: 11 })}>
-            <Crosshair className="w-4 h-4" />
-          </Button>
-        </div>
       </div>
 
       {/* Loading indicator */}
@@ -300,7 +314,7 @@ export default function ParcelMap() {
 
       {/* Detail sidebar */}
       {selectedParcel && (
-        <div className="absolute top-16 right-3 z-10 w-72 sm:w-80 max-h-[calc(100%-5rem)] overflow-y-auto">
+        <div className="absolute top-28 right-3 left-3 sm:left-auto z-20 sm:w-80 max-h-[calc(100%-9rem)] overflow-y-auto">
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-start justify-between">
@@ -397,8 +411,8 @@ export default function ParcelMap() {
         </div>
       )}
 
-      {/* Legend */}
-      <div className="absolute bottom-6 left-3 z-10">
+      {/* Legend — hidden on mobile to preserve map space */}
+      <div className="absolute bottom-6 left-3 z-10 hidden sm:block">
         <Card className="p-3 space-y-1.5">
           <div className="text-[11px] font-semibold text-white">Counties</div>
           <LegendItem color="#22c55e" label="Sullivan" />

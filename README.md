@@ -43,10 +43,35 @@ cp .env.example .env
 # edit .env with your Supabase URL + anon key
 
 npm install
-npm run dev
+npm run dev          # http://localhost:5173 (Vite alone)
+# or
+npx wrangler pages dev dist --port 5180   # full stack (Functions + static)
 ```
 
-Open http://localhost:5173
+## Live
+
+- Production: https://tn-land-atlas.pages.dev
+- Cloudflare Pages project: `tn-land-atlas`
+
+## API (Cloudflare Pages Functions)
+
+| Endpoint | Method | Body | Returns |
+|---|---|---|---|
+| `/api/parcels` | POST | `{ west, south, east, north, county }` | GeoJSON FeatureCollection from ArcGIS |
+| `/api/search` | POST | `{ query, county }` | GeoJSON FeatureCollection (owner / address fuzzy match) |
+| `/api/property` | POST | `{ parcelKey }` | `{ buildings, valuation, sales, entities }` from Supabase |
+
+The frontend calls these endpoints first and falls back to direct ArcGIS / Supabase calls if a Function is unavailable (e.g. `npm run dev` without wrangler).
+
+## Testing
+
+```bash
+pnpm test:e2e                                       # run against local dev server
+BASE_URL=https://tn-land-atlas.pages.dev pnpm test:e2e   # run against production
+npx playwright test --repeat-each=3                       # flake check
+```
+
+33 tests across desktop / iPad / iPhone viewports — covers map render, controls, county filters, search, layer toggle, parcel selection, sidebar, recenter, and a guard that the map container actually fills the viewport (catches the MapLibre `position: relative` regression).
 
 ## Stack
 

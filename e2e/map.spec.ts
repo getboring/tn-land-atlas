@@ -1,12 +1,95 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+
+const PARCEL_API = /\/api\/parcels|\/ParcelPublishing\/TaxParcels\/MapServer\/0\/query/
+
+async function waitForMapReady(page: Page) {
+  await page.waitForSelector('.maplibregl-canvas', { timeout: 20000 })
+  await page.waitForFunction(
+    () => {
+      const m = (window as unknown as { __map__?: { loaded?: () => boolean } }).__map__
+      return !!m && typeof m.loaded === 'function' && m.loaded()
+    },
+    { timeout: 20000 }
+  )
+}
+
+async function loadParcelsAt(page: Page, lng: number, lat: number, zoom: number) {
+  const respPromise = page.waitForResponse(
+    (r) => PARCEL_API.test(r.url()) && r.status() === 200,
+    { timeout: 25000 }
+  )
+  await page.evaluate(
+    ([lngArg, latArg, zoomArg]) => {
+      const m = (window as unknown as { __map__?: { jumpTo: (o: object) => void } }).__map__
+      if (m) m.jumpTo({ center: [lngArg, latArg], zoom: zoomArg })
+    },
+    [lng, lat, zoom] as const
+  )
+  await respPromise
+
+  await expect
+    .poll(
+      async () =>
+        await page.evaluate(() => {
+          const m = (
+            window as unknown as {
+              __map__?: { queryRenderedFeatures: (g: undefined, o: object) => unknown[] }
+            }
+          ).__map__
+          if (!m) return 0
+          return m.queryRenderedFeatures(undefined, { layers: ['parcels-fill'] }).length
+        }),
+      { timeout: 20000, intervals: [500, 1000, 2000] }
+    )
+    .toBeGreaterThan(0)
+}
+
+async function clickFirstParcel(page: Page) {
+  // Center the map on a parcel's centroid, then click canvas center.
+  // Centering avoids any overlap with top-bar/sidebar controls and guarantees
+  // queryRenderedFeatures and the actual hit-test agree.
+  const centered = await page.evaluate(() => {
+    type Coord = [number, number]
+    const m = (
+      window as unknown as {
+        __map__?: {
+          queryRenderedFeatures: (p: undefined, o: object) => Array<{
+            geometry: { type: string; coordinates: Coord[][] | Coord[][][] }
+          }>
+          jumpTo: (o: object) => void
+        }
+      }
+    ).__map__
+    if (!m) return null
+    const feats = m.queryRenderedFeatures(undefined, { layers: ['parcels-fill'] })
+    if (feats.length === 0) return null
+    const ring = (feats[0].geometry.type === 'MultiPolygon'
+      ? (feats[0].geometry.coordinates as Coord[][][])[0][0]
+      : (feats[0].geometry.coordinates as Coord[][])[0]) as Coord[]
+    let lng = 0
+    let lat = 0
+    for (const [x, y] of ring) {
+      lng += x
+      lat += y
+    }
+    lng /= ring.length
+    lat /= ring.length
+    m.jumpTo({ center: [lng, lat], zoom: 18 })
+    return { lng, lat }
+  })
+  if (!centered) throw new Error('No parcel found in viewport to click')
+  // Wait a beat for moveend + render to settle at the new zoom
+  await page.waitForLoadState('networkidle').catch(() => undefined)
+  const canvas = page.locator('canvas.maplibregl-canvas')
+  const box = await canvas.boundingBox()
+  if (!box) throw new Error('Canvas not found')
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+}
 
 test.describe('TN Land Atlas', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
-    // Wait for map canvas to appear
-    await page.waitForSelector('.maplibregl-canvas', { timeout: 15000 })
-    // Wait for map to be interactive
-    await page.waitForTimeout(1000)
+    await waitForMapReady(page)
   })
 
   test('map loads with title and controls', async ({ page }) => {
@@ -17,136 +100,100 @@ test.describe('TN Land Atlas', () => {
     await expect(page.locator('.maplibregl-ctrl-geolocate')).toBeVisible()
   })
 
+  test('map container fills the viewport', async ({ page }) => {
+    const dims = await page.evaluate(() => {
+      const m = (window as unknown as { __map__?: { getContainer: () => HTMLElement; getCanvas: () => HTMLCanvasElement } }).__map__
+      if (!m) return null
+      const c = m.getContainer()
+      const canvas = m.getCanvas()
+      return {
+        containerH: c.clientHeight,
+        canvasH: canvas.clientHeight,
+        viewportH: window.innerHeight,
+      }
+    })
+    expect(dims).not.toBeNull()
+    // Container must occupy more than half the viewport — guards against
+    // CSS regressions that collapse the map to height: 0.
+    expect(dims!.containerH).toBeGreaterThan(dims!.viewportH * 0.6)
+    expect(dims!.canvasH).toBeGreaterThan(dims!.viewportH * 0.6)
+  })
+
   test('county filter pills are visible and clickable', async ({ page }) => {
-    const counties = ['All', 'Sullivan', 'Washington', 'Carter']
-    for (const county of counties) {
-      const btn = page.getByRole('button', { name: county, exact: false })
-      await expect(btn).toBeVisible()
+    for (const county of ['All', 'Sullivan', 'Washington', 'Carter']) {
+      await expect(page.getByRole('button', { name: county, exact: false })).toBeVisible()
     }
-
-    // Click Sullivan filter
     await page.getByRole('button', { name: 'Sullivan', exact: false }).click()
-    await page.waitForTimeout(500)
-
-    // Click back to All
+    await expect(page.getByRole('button', { name: 'Sullivan', exact: false })).toBeVisible()
     await page.getByRole('button', { name: 'All', exact: false }).first().click()
-    await page.waitForTimeout(500)
   })
 
   test('search input exists and accepts text', async ({ page }) => {
-    const searchInput = page.getByPlaceholder('Search owner or address…')
-    await expect(searchInput).toBeVisible()
-    await searchInput.fill('123 main')
-    await expect(searchInput).toHaveValue('123 main')
+    const input = page.getByPlaceholder('Search owner or address…')
+    await expect(input).toBeVisible()
+    await input.fill('123 main')
+    await expect(input).toHaveValue('123 main')
   })
 
   test('base layer toggle switches between Esri and NAIP', async ({ page }) => {
-    const toggle = page.getByRole('button', { name: /NAIP|Esri/i })
+    const toggle = page.getByRole('button', { name: /^(NAIP|Esri)$/ })
     await expect(toggle).toBeVisible()
-
-    const initialText = await toggle.textContent()
+    const before = await toggle.textContent()
     await toggle.click()
-    await page.waitForTimeout(500)
-
-    const newText = await toggle.textContent()
-    expect(newText).not.toBe(initialText)
+    await expect(toggle).not.toHaveText(before ?? '')
   })
 
   test('parcel visibility toggle works', async ({ page }) => {
-    const toggle = page.getByRole('button', { name: /Hide|Show/i })
+    const toggle = page.getByRole('button', { name: /^(Hide|Show)$/ })
     await expect(toggle).toBeVisible()
-
     await toggle.click()
-    await page.waitForTimeout(500)
-    await expect(page.getByRole('button', { name: 'Show', exact: false })).toBeVisible()
-
+    await expect(page.getByRole('button', { name: 'Show', exact: true })).toBeVisible()
     await toggle.click()
-    await page.waitForTimeout(500)
-    await expect(page.getByRole('button', { name: 'Hide', exact: false })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Hide', exact: true })).toBeVisible()
   })
 
   test('zooming in loads parcel polygons', async ({ page }) => {
-    // Pan to downtown Johnson City area and zoom in using map API
-    await page.evaluate(() => {
-      const map = (window as any).__map__
-      if (map) {
-        map.jumpTo({ center: [-82.3534, 36.3134], zoom: 15 })
-      }
-    })
-    // Wait for moveend debounce + network
-    await page.waitForTimeout(5000)
-
-    // Parcel count indicator should appear
-    await expect(page.getByText(/parcels visible/)).toBeVisible({ timeout: 15000 })
+    await loadParcelsAt(page, -82.3534, 36.3134, 15)
+    await expect(page.getByText(/parcels visible/)).toBeVisible({ timeout: 10000 })
   })
 
   test('clicking a parcel opens detail sidebar', async ({ page }) => {
-    // Pan to downtown Johnson City and zoom in
-    await page.evaluate(() => {
-      const map = (window as any).__map__
-      if (map) {
-        map.jumpTo({ center: [-82.3534, 36.3134], zoom: 16 })
-      }
-    })
-    await page.waitForTimeout(4000)
-
-    // Wait for parcels to load
-    await expect(page.getByText(/parcels visible/)).toBeVisible({ timeout: 15000 })
-
-    // Programmatically select first rendered parcel via map API
-    await page.evaluate(() => {
-      const map = (window as any).__map__
-      if (!map) return
-      const features = map.queryRenderedFeatures(undefined, { layers: ['parcels-fill'] })
-      if (features && features.length > 0) {
-        const coords = features[0].geometry.coordinates[0][0]
-        map.fire('click', { lngLat: coords, point: map.project(coords) })
-      }
-    })
-    await page.waitForTimeout(1500)
-
-    // Detail sidebar should appear with Property Details
-    await expect(page.getByText('Property Details')).toBeVisible({ timeout: 5000 })
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await expect(page.getByText('Property Details')).toBeVisible({ timeout: 8000 })
   })
 
   test('detail sidebar can be closed', async ({ page }) => {
-    // Pan to downtown Johnson City and zoom in
-    await page.evaluate(() => {
-      const map = (window as any).__map__
-      if (map) {
-        map.jumpTo({ center: [-82.3534, 36.3134], zoom: 16 })
-      }
-    })
-    await page.waitForTimeout(5000)
-
-    await expect(page.getByText(/parcels visible/)).toBeVisible({ timeout: 20000 })
-
-    // Programmatically select first rendered parcel
-    await page.evaluate(() => {
-      const map = (window as any).__map__
-      if (!map) return
-      const features = map.queryRenderedFeatures(undefined, { layers: ['parcels-fill'] })
-      if (features && features.length > 0) {
-        const coords = features[0].geometry.coordinates[0][0]
-        map.fire('click', { lngLat: coords, point: map.project(coords) })
-      }
-    })
-    await page.waitForTimeout(1500)
-
-    await expect(page.getByText('Property Details')).toBeVisible({ timeout: 5000 })
-
-    // Close the sidebar using the X button
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await expect(page.getByText('Property Details')).toBeVisible({ timeout: 8000 })
     await page.locator('button').filter({ has: page.locator('svg.lucide-x') }).click()
-    await page.waitForTimeout(500)
-
     await expect(page.getByText('Property Details')).not.toBeVisible()
   })
 
   test('responsive layout adapts to viewport', async ({ page }) => {
-    // On mobile, the top bar should still be visible
     await expect(page.getByText('TN Land Atlas')).toBeVisible()
-
-    // Search input should be visible
     await expect(page.getByPlaceholder('Search owner or address…')).toBeVisible()
+  })
+
+  test('recenter button resets view', async ({ page }) => {
+    await page.evaluate(() => {
+      const m = (window as unknown as { __map__?: { jumpTo: (o: object) => void } }).__map__
+      if (m) m.jumpTo({ center: [-82.3534, 36.3134], zoom: 16 })
+    })
+    const recenter = page.locator('button').filter({ has: page.locator('svg.lucide-crosshair') })
+    await recenter.click()
+    await expect
+      .poll(async () =>
+        await page.evaluate(() => {
+          const m = (
+            window as unknown as {
+              __map__?: { getZoom: () => number }
+            }
+          ).__map__
+          return m ? m.getZoom() : 0
+        })
+      , { timeout: 5000 })
+      .toBeLessThan(13)
   })
 })
