@@ -121,15 +121,6 @@ test.describe('TN Land Atlas', () => {
     expect(dims!.canvasH).toBeGreaterThan(dims!.viewportH * 0.6)
   })
 
-  test('county filter pills are visible and clickable', async ({ page }) => {
-    for (const county of ['All', 'Sullivan', 'Washington', 'Carter']) {
-      await expect(page.getByRole('button', { name: county, exact: false })).toBeVisible()
-    }
-    await page.getByRole('button', { name: 'Sullivan', exact: false }).click()
-    await expect(page.getByRole('button', { name: 'Sullivan', exact: false })).toBeVisible()
-    await page.getByRole('button', { name: 'All', exact: false }).first().click()
-  })
-
   test('search input exists and accepts text', async ({ page }) => {
     const input = page.getByPlaceholder('Search owner or address…')
     await expect(input).toBeVisible()

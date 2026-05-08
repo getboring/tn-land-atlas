@@ -80,13 +80,14 @@ function unionBounds(features: ParcelFeature[]): Bounds | null {
   return [[minLng, minLat], [maxLng, maxLat]]
 }
 
-const COUNTIES = ['ALL', 'Sullivan', 'Washington', 'Carter'] as const
-type County = (typeof COUNTIES)[number]
+// All three counties are always visible. The server-side validator still
+// accepts a 'county' parameter for the rare case we need it, but the UI
+// doesn't expose it — turning off 2 of 3 counties was never a real workflow.
+const COUNTY_ALL = 'ALL' as const
 
 export default function ParcelMap() {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<maplibregl.Map | null>(null)
-  const [activeCounty, setActiveCounty] = useState<County>('ALL')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedParcel, setSelectedParcel] = useState<ParcelFeature | null>(null)
   const [enriched, setEnriched] = useState<PropertyData | null>(null)
@@ -105,12 +106,9 @@ export default function ParcelMap() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialPermalink = useRef(parsePermalink(window.location.search))
   // Refs to the latest callbacks so the long-lived map event handlers
-  // (registered once at init) always invoke the current closure. Without this,
-  // the handlers would capture the first render's callbacks and miss state
-  // updates (e.g. activeCounty changes).
+  // (registered once at init) always invoke the current closure.
   const loadRef = useRef<(m: maplibregl.Map) => void>(() => {})
   const selectRef = useRef<(f: ParcelFeature, m: maplibregl.Map) => void>(() => {})
-  const countyRef = useRef<County>('ALL')
 
   useEffect(() => {
     if (!mapContainer.current || map.current) return
@@ -315,7 +313,7 @@ export default function ParcelMap() {
           void (async () => {
             setLoading(true)
             try {
-              const data = await queryParcelsInPolygon(ring, countyRef.current)
+              const data = await queryParcelsInPolygon(ring, COUNTY_ALL)
               setSearchResults((data.features ?? []) as ParcelFeature[])
               const src = m.getSource('parcels') as maplibregl.GeoJSONSource | undefined
               src?.setData(data as GeoJSON.FeatureCollection)
@@ -369,7 +367,7 @@ export default function ParcelMap() {
     abortRef.current = new AbortController()
     setLoading(true)
     try {
-      const data = await queryParcelsByBbox(b.getWest(), b.getSouth(), b.getEast(), b.getNorth(), activeCounty, abortRef.current.signal)
+      const data = await queryParcelsByBbox(b.getWest(), b.getSouth(), b.getEast(), b.getNorth(), COUNTY_ALL, abortRef.current.signal)
       src?.setData(data as GeoJSON.FeatureCollection)
       setParcelCount(data.features?.length || 0)
     } catch (e) {
@@ -380,7 +378,7 @@ export default function ParcelMap() {
     } finally {
       setLoading(false)
     }
-  }, [activeCounty])
+  }, [])
 
   const selectParcel = useCallback(async (f: ParcelFeature, m: maplibregl.Map) => {
     setSelectedParcel(f)
@@ -424,7 +422,7 @@ export default function ParcelMap() {
     if (!q || !map.current) return
     setLoading(true)
     try {
-      const data = await searchParcels(q, activeCounty)
+      const data = await searchParcels(q, COUNTY_ALL)
       const features = (data.features ?? []) as ParcelFeature[]
       setSearchResults(features)
       if (features.length > 0) {
@@ -441,7 +439,7 @@ export default function ParcelMap() {
     } finally {
       setLoading(false)
     }
-  }, [searchQuery, activeCounty])
+  }, [searchQuery])
 
   const pickResult = useCallback(
     (f: ParcelFeature) => {
@@ -503,15 +501,6 @@ export default function ParcelMap() {
     loadRef.current = loadParcelsForViewport
     selectRef.current = selectParcel
   }, [loadParcelsForViewport, selectParcel])
-
-  useEffect(() => {
-    countyRef.current = activeCounty
-  }, [activeCounty])
-
-  // Reload parcels when the active county filter changes.
-  useEffect(() => {
-    if (map.current) loadParcelsForViewport(map.current)
-  }, [activeCounty, loadParcelsForViewport])
 
   // Resolve the initial ?parcel= URL param exactly once. Fly to it and select.
   useEffect(() => {
@@ -586,31 +575,6 @@ export default function ParcelMap() {
             <Search className="w-4 h-4" />
           </Button>
         </div>
-      </div>
-
-      {/* Top bar — row 2: county filter pills (horizontally scrollable on mobile) */}
-      <div
-        role="group"
-        aria-label="County filter"
-        className="absolute top-[3.4rem] left-3 right-3 z-10 flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide pointer-events-none [&>*]:pointer-events-auto"
-      >
-        {COUNTIES.map((c) => (
-          <button
-            key={c}
-            type="button"
-            onClick={() => setActiveCounty(c)}
-            aria-pressed={activeCounty === c}
-            className={cn(
-              // h-10 = 40px (WCAG 2.5.5 AA, comfortable on touch).
-              'px-4 h-10 rounded-lg text-xs font-medium border transition-colors whitespace-nowrap shrink-0',
-              activeCounty === c
-                ? 'bg-brand-copper border-brand-copper text-white'
-                : 'bg-brand-navy/90 backdrop-blur border-brand-stone/20 text-brand-parchment hover:bg-white/10'
-            )}
-          >
-            {c === 'ALL' ? 'All' : c}
-          </button>
-        ))}
       </div>
 
       {/* Bottom action bar — the menu system. Universal across viewports.
@@ -711,7 +675,7 @@ export default function ParcelMap() {
           parcel closes the list). On mobile it spans the full width minus the
           right gutter. */}
       {searchResults !== null && (
-        <div className="absolute top-28 right-3 left-3 sm:left-auto sm:w-96 z-30 max-h-[65vh] flex flex-col">
+        <div className="absolute top-16 right-3 left-3 sm:left-auto sm:w-96 z-30 max-h-[70vh] flex flex-col">
           <Card className="flex flex-col overflow-hidden">
             <CardHeader className="pb-2 flex-row items-center justify-between space-y-0 gap-2">
               <CardTitle className="text-sm">
@@ -730,8 +694,7 @@ export default function ParcelMap() {
             <CardContent className="p-0 overflow-y-auto">
               {searchResults.length === 0 && (
                 <div className="px-4 py-6 text-xs text-brand-stone">
-                  Try a different name, street, or parcel ID. Filter is set to{' '}
-                  <span className="text-brand-parchment">{activeCounty === 'ALL' ? 'all counties' : `${activeCounty} County`}</span>.
+                  Try a different name, street, or parcel ID.
                 </div>
               )}
               {searchResults.length > 0 && (
@@ -791,7 +754,7 @@ export default function ParcelMap() {
 
       {/* Detail sidebar */}
       {selectedParcel && (
-        <div className="absolute top-28 right-3 left-3 sm:left-auto z-20 sm:w-80 max-h-[calc(100%-9rem)] overflow-y-auto">
+        <div className="absolute top-16 right-3 left-3 sm:left-auto z-20 sm:w-80 max-h-[calc(100%-6rem)] overflow-y-auto">
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-start justify-between gap-1">
@@ -908,7 +871,7 @@ export default function ParcelMap() {
           (mobile is too tight). The colors echo the parcel-line/-fill colors
           so users can read which county each polygon belongs to without
           tapping. */}
-      <div className="absolute top-28 left-3 z-10 hidden sm:block pointer-events-none">
+      <div className="absolute top-16 left-3 z-10 hidden sm:block pointer-events-none">
         <Card className="p-2.5 space-y-1 pointer-events-auto">
           <div className="text-[10px] uppercase tracking-wider text-brand-stone font-medium">Counties</div>
           <LegendItem color="#22c55e" label="Sullivan" />
