@@ -93,7 +93,9 @@ test.describe('TN Land Atlas', () => {
   })
 
   test('map loads with title and controls', async ({ page }) => {
-    await expect(page.getByText('TN Land Atlas')).toBeVisible()
+    // The title text is hidden on mobile to fit; the logo container retains
+    // an aria-label so it remains discoverable.
+    await expect(page.locator('[aria-label="TN Land Atlas"]')).toBeVisible()
     await expect(page.locator('.maplibregl-ctrl-zoom-in')).toBeVisible()
     await expect(page.locator('.maplibregl-ctrl-zoom-out')).toBeVisible()
     await expect(page.locator('.maplibregl-ctrl-fullscreen')).toBeVisible()
@@ -170,6 +172,20 @@ test.describe('TN Land Atlas', () => {
     await expect(toggle).not.toHaveText(before ?? '')
   })
 
+  test('topo contours toggle works', async ({ page }) => {
+    const toggle = page.getByRole('button', { name: /contour lines/i })
+    await expect(toggle).toBeVisible()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    // Layer visibility flipped to 'visible'
+    const vis = await page.evaluate(() => {
+      const m = (window as unknown as { __map__?: { getLayoutProperty: (id: string, p: string) => string } }).__map__
+      return m?.getLayoutProperty('contour-lines', 'visibility')
+    })
+    expect(vis).toBe('visible')
+  })
+
   test('parcel visibility toggle works', async ({ page }) => {
     const toggle = page.getByRole('button', { name: /^(Hide|Show)$/ })
     await expect(toggle).toBeVisible()
@@ -199,7 +215,7 @@ test.describe('TN Land Atlas', () => {
   })
 
   test('responsive layout adapts to viewport', async ({ page }) => {
-    await expect(page.getByText('TN Land Atlas')).toBeVisible()
+    await expect(page.locator('[aria-label="TN Land Atlas"]')).toBeVisible()
     await expect(page.getByPlaceholder('Search owner or address…')).toBeVisible()
   })
 

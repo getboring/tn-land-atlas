@@ -1,16 +1,26 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import mlcontour from 'maplibre-contour'
 import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey } from '@/lib/api'
 import type { ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Search, X, Layers, Crosshair, Building2, TrendingUp, Users, Share2, Check } from 'lucide-react'
+import { Search, X, Layers, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain } from 'lucide-react'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
 import type { PropertyData } from '@/lib/supabase-queries'
 import { parsePermalink, updateAddressBar, DEFAULT_MAP_VIEW } from '@/lib/permalink'
 
 const NO_SELECTION: number = -1
+
+// Public Mapzen-on-AWS terrarium DEM tiles (no API key, free, global).
+// Single shared protocol — register exactly once, then any map can use it.
+const demSource = new mlcontour.DemSource({
+  url: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
+  encoding: 'terrarium',
+  maxzoom: 12,
+})
+let demRegistered = false
 
 function isAbortError(e: unknown): boolean {
   return e instanceof DOMException && e.name === 'AbortError'
@@ -85,6 +95,7 @@ export default function ParcelMap() {
   const [parcelCount, setParcelCount] = useState(0)
   const [searchResults, setSearchResults] = useState<ParcelFeature[] | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
+  const [contoursVisible, setContoursVisible] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initialPermalink = useRef(parsePermalink(window.location.search))
@@ -101,6 +112,12 @@ export default function ParcelMap() {
     // East-TN bounding box. Mirrors functions/api/_validate.ts so the basemap
     // doesn't request tiles outside the area we care about.
     const TN_BOUNDS: [number, number, number, number] = [-90.5, 34.5, -81.5, 37.0]
+
+    // Register the DEM addProtocol exactly once per page load.
+    if (!demRegistered) {
+      demSource.setupMaplibre(maplibregl)
+      demRegistered = true
+    }
 
     const m = new maplibregl.Map({
       container: mapContainer.current,
@@ -148,6 +165,45 @@ export default function ParcelMap() {
     m.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'top-right')
 
     m.on('load', () => {
+      // Contour source: vector tiles generated on-the-fly from the DEM raster.
+      // multiplier 3.28084 converts meters -> feet (TN convention).
+      // thresholds: at each zoom, [minor interval, major interval] in feet.
+      m.addSource('contours', {
+        type: 'vector',
+        tiles: [
+          demSource.contourProtocolUrl({
+            multiplier: 3.28084,
+            thresholds: {
+              11: [200, 1000],
+              12: [100, 500],
+              13: [50, 200],
+              14: [20, 100],
+              15: [10, 50],
+            },
+            elevationKey: 'ele',
+            levelKey: 'level',
+            contourLayer: 'contours',
+          }),
+        ],
+        maxzoom: 15,
+        attribution:
+          'Elevation: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Mapzen Terrain Tiles</a> (Public Domain)',
+      })
+
+      // Major contours (level=1) thicker, minor (level=0) thinner.
+      // Visibility starts off — toggled by the Topo button.
+      m.addLayer({
+        id: 'contour-lines',
+        type: 'line',
+        source: 'contours',
+        'source-layer': 'contours',
+        layout: { visibility: 'none', 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': 'rgba(255,200,120,0.55)',
+          'line-width': ['match', ['get', 'level'], 1, 1.4, 0.6],
+        },
+      })
+
       m.addSource('parcels', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
@@ -358,6 +414,12 @@ export default function ParcelMap() {
     map.current?.setLayoutProperty('usgs-naip', 'visibility', next === 'naip' ? 'visible' : 'none')
   }
 
+  const toggleContours = () => {
+    const next = !contoursVisible
+    setContoursVisible(next)
+    map.current?.setLayoutProperty('contour-lines', 'visibility', next ? 'visible' : 'none')
+  }
+
   const toggleParcels = () => {
     const next = !parcelsVisible
     setParcelsVisible(next)
@@ -440,9 +502,13 @@ export default function ParcelMap() {
       {/* Top bar — row 1: logo + search + view controls (always visible).
           All tap targets are at least 40px tall (WCAG 2.5.5 AA / iOS HIG comfortable). */}
       <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2">
-        <div className="flex items-center gap-2 rounded-xl bg-brand-navy/90 backdrop-blur border border-brand-stone/15 px-3 h-10 shrink-0">
+        <div
+          className="flex items-center gap-2 rounded-xl bg-brand-navy/90 backdrop-blur border border-brand-stone/15 px-3 h-10 shrink-0"
+          aria-label="TN Land Atlas"
+          title="TN Land Atlas"
+        >
           <Layers className="w-4 h-4 text-brand-copper" />
-          <span className="text-sm font-bold text-white whitespace-nowrap">TN Land Atlas</span>
+          <span className="text-sm font-bold text-white whitespace-nowrap hidden sm:inline">TN Land Atlas</span>
         </div>
 
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
@@ -476,11 +542,21 @@ export default function ParcelMap() {
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          <Button variant="outline" onClick={toggleParcels} className="h-10 px-3 text-xs">
+          <Button variant="outline" onClick={toggleParcels} className="h-10 px-2 sm:px-3 text-xs">
             {parcelsVisible ? 'Hide' : 'Show'}
           </Button>
-          <Button variant="outline" onClick={toggleBase} className="h-10 px-3 text-xs">
+          <Button variant="outline" onClick={toggleBase} className="h-10 px-2 sm:px-3 text-xs">
             {baseLayer === 'esri' ? 'NAIP' : 'Esri'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={toggleContours}
+            aria-label={contoursVisible ? 'Hide contour lines' : 'Show contour lines'}
+            aria-pressed={contoursVisible}
+            className={cn('h-10 w-10 px-0', contoursVisible && 'bg-brand-copper border-brand-copper text-white')}
+            title="Topographic contour lines (feet)"
+          >
+            <Mountain className="w-4 h-4" />
           </Button>
           <Button variant="outline" onClick={() => map.current?.flyTo({ center: [-82.35, 36.35], zoom: 11 })} aria-label="Recenter" className="h-10 w-10 px-0">
             <Crosshair className="w-4 h-4" />
