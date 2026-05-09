@@ -1,6 +1,11 @@
-# TN Land Atlas
+# Holston Scout
 
-Parcel mapping for Sullivan, Washington, and Carter counties.
+Pre-construction parcel intelligence for Sullivan, Washington, and Carter
+counties in East Tennessee. Tagline: "Scout the ground. Know the build."
+Parent brand: Holston Intel.
+
+(Repo and Cloudflare Pages project keep the legacy `tn-land-atlas` name;
+the user-facing brand is **Holston Scout**.)
 
 ## Stack
 - Vite 8 + React 19 + TypeScript strict (project refs for app / node / functions)
@@ -43,19 +48,23 @@ public/
   robots.txt, sitemap.xml, manifest.json, favicon.svg, og-image.svg
 
 src/
-  App.tsx                    <ErrorBoundary><Suspense><ParcelMap /></...
+  App.tsx                    <HolstonChrome><ErrorBoundary><Suspense><ParcelMap />
   main.tsx, index.css
   components/
-    ParcelMap.tsx            main map, search, detail panel, bottom action
-                             bar, Tools popover, FilterSheet, ParcelInsights
-    ErrorBoundary.tsx        recovery UI on render error
-    ui/{button,card}.tsx
+    HolstonChrome.tsx        top chrome — wordmark + Survey Corner mark + slots
+    SurveyCornerMark.tsx     geometric brand mark, three lockups
+    ParcelMap.tsx            main map, search, detail panel, bottom action bar,
+                             Tools popover, FilterSheet, ParcelInsights
+    MapLoadingShell.tsx      graduated 4-stage loading shell
+    MapErrorFallback.tsx     branded error UI (used by react-error-boundary)
+    ui/{button,card}.tsx     shadcn-style primitives
   lib/
     api.ts                   typed fetch for /api/*
     arcgis.ts                ParcelProperties / ParcelFeature / ParcelCollection
     draw.ts                  Terra Draw lifecycle helpers, haversine ruler
     insights.ts              pure indicator functions ($/ac, holding, entity, ...)
-    insights.test.ts         55 vitest cases
+    insights.test.ts         55+ vitest cases
+    lazyRetry.ts             dynamic-import wrapper with one-shot reload
     permalink.ts             URL <-> { view, parcelKey } via replaceState
     supabase-queries.ts      enriched-data types (no runtime client)
     utils.ts                 cn(), fmtMoney() (handles 0), fmtDate() (handles NaN)
@@ -68,6 +77,33 @@ functions/api/
   property.ts                POST -> Supabase parallel reads (UUID-validated joins)
 e2e/map.spec.ts              48 tests x 3 viewports
 ```
+
+## Brand system (Holston Scout)
+
+Identity is centralized in three surfaces:
+
+- **`HolstonChrome`** — top bar (48px mobile, 52px desktop). Holds the
+  wordmark + Survey Corner mark. Center/right slots are reserved for
+  future search and auth integration. The map fills the remaining
+  viewport via `flex-1`.
+- **`SurveyCornerMark`** — single SVG master used at every size from
+  16px favicon through 1200px share image. Three lockups: inline
+  (chrome wordmark), app-icon (with navy-deep ring), one-color fallback.
+- **`@theme` tokens** in `index.css` — palette + type stack + spacing
+  + motion + shadows + z-index, plus semantic aliases (`text-primary`,
+  `panel`, `action`, `focus-ring`, `border-subtle`) and map-role tokens
+  (`map-parcel-default` = slate, `map-parcel-hover` = copper-bright,
+  `map-parcel-selected` = copper).
+
+Map state is the brand's most distinctive surface:
+- Default outline: slate at 0.6 opacity (calm USGS-quad posture)
+- Hover: copper-bright outline + copper fill at 0.14 alpha (feature-state)
+- Selected: copper outline + copper fill at 0.24 alpha + corner-node
+  markers (parchment-filled, navy-stroked points at every polygon
+  vertex — the Survey Corner mark in miniature)
+
+Numerics use the `data-value` utility (IBM Plex Mono + tabular-nums).
+Caps labels use `data-label`.
 
 ## Architecture notes
 

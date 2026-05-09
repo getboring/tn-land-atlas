@@ -21,7 +21,7 @@
   #  - img-src/data: for inline data URIs MapLibre uses for sprites
   #  - connect-src to the upstreams the app actually talks to
   #  - frame-ancestors 'self' is the modern equivalent of X-Frame-Options.
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://gis.johnsoncitytn.org https://server.arcgisonline.com https://basemap.nationalmap.gov https://s3.amazonaws.com https://*.supabase.co https://maps.apple.com https://www.google.com; worker-src 'self' blob:; font-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; connect-src 'self' https://gis.johnsoncitytn.org https://server.arcgisonline.com https://basemap.nationalmap.gov https://s3.amazonaws.com https://*.supabase.co https://maps.apple.com https://www.google.com; worker-src 'self' blob:; font-src 'self' data: https://fonts.gstatic.com; frame-ancestors 'self'; base-uri 'self'; form-action 'self'
 
 # Tighter caching for hashed JS/CSS (Vite outputs content-hashed filenames).
 /assets/*

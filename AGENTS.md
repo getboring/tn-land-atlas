@@ -1,8 +1,16 @@
-# Agent Rules — TN Land Atlas
+# Agent Rules — Holston Scout
 
 Guardrails for AI coding agents working in this repo. Modeled on the Convex
 AI rules pattern but specific to this stack: Vite + React 19 + MapLibre on
 Cloudflare Pages with Pages Functions and Supabase REST.
+
+**Product:** Holston Scout — pre-construction parcel intelligence for East
+Tennessee builders.
+**Tagline:** Scout the ground. Know the build.
+**Parent brand:** Holston Intel.
+**Repo / deploy target:** `getboring/tn-land-atlas` on
+`tn-land-atlas.pages.dev` (Cloudflare Pages project name kept; the URL will
+move to `scout.holstonintel.com` in a later phase).
 
 If you (the agent) violate one of these rules, you are introducing a known
 class of bug that has already been hunted down once. Don't.
@@ -15,7 +23,7 @@ class of bug that has already been hunted down once. Don't.
 - **Live parcels:** Johnson City ArcGIS REST (`gis.johnsoncitytn.org`)
 - **Enriched data:** Supabase REST, **server-side only**
 - **Lint/format:** Biome is **not** used here — ESLint + typescript-eslint are
-- **Tests:** Playwright (~48 tests x 3 viewports for E2E) + Vitest (55 unit tests for `src/lib/insights.ts`)
+- **Tests:** Playwright (~50+ tests x 3 viewports for E2E) + Vitest (60+ unit tests across `src/lib/insights.ts`, `permalink.ts`, `lazyRetry.ts`)
 
 This is a Cloudflare-Pages project, not a Workers/D1/Hono/better-auth project.
 Don't suggest migrating to a different shell.
@@ -241,6 +249,48 @@ curl -s -X POST -H 'content-type: application/json' \
 
 This repo doesn't use any of them. If guidance from the global
 `~/.claude/CLAUDE.md` says "use Convex" or "default to D1", that's for
-new projects. **TN Land Atlas is grandfathered into the
+new projects. **Holston Scout is grandfathered into the
 Cloudflare-Pages-plus-Supabase shape it shipped with.** Don't migrate
 without an explicit user request.
+
+## Brand system (Holston Scout)
+
+The brand identity ships in three files plus tokens:
+
+- `src/components/HolstonChrome.tsx` — top chrome bar (48-52px). Holds
+  the wordmark + Survey Corner mark on the left, slots for future search
+  and auth on the center/right. Map fills the remaining viewport via
+  `flex-1`. Banner role + aria-label.
+- `src/components/SurveyCornerMark.tsx` — the geometric brand mark.
+  Single SVG master at three lockups: inline (chrome), app-icon (with
+  navy-deep ring), one-color fallback. Mirrored in `public/favicon.svg`
+  and `public/og-image.svg`.
+- `src/index.css` — `@theme` block with the canonical palette
+  (navy / navy-deep / slate / forest / parchment / stone / copper /
+  copper-bright + functional success/warning/error/info), type stack
+  (Playfair Display / Source Sans 3 / IBM Plex Mono), spacing, motion,
+  shadows, z-index, plus semantic aliases (`text-primary`, `panel`,
+  `action`, `focus-ring`, etc.) and map-role tokens (`map-parcel-default`,
+  `map-parcel-hover`, `map-parcel-selected`).
+
+Map style is the single most distinctive surface. Default parcel outline
+is slate at 0.6 opacity (calm USGS-quad posture). Hover gets a copper-
+bright outline + copper fill at 0.14 alpha via feature-state. Selected
+parcel gets a copper outline + copper fill at 0.24 alpha + corner-node
+markers (parchment-filled, navy-stroked points at every polygon vertex —
+the Survey Corner brand mark in miniature).
+
+Numeric data (parcel ID, acres, dollar amounts, dates, coordinates) all
+render in IBM Plex Mono with `font-variant-numeric: tabular-nums` via the
+`data-value` utility class. Caps labels use `data-label`.
+
+### Tailwind v4 var() syntax (load-bearing)
+
+`h-[--spacing-chrome]` does NOT auto-wrap CSS variables. It compiles to
+`height: --spacing-chrome` (invalid, ignored). Use one of:
+- `h-(--spacing-chrome)` — Tailwind v4 parens-syntax, auto-wraps with `var()`
+- `h-[var(--spacing-chrome)]` — explicit
+- `h-12` / `h-[52px]` — direct utilities (preferred for fixed values)
+
+We use direct utilities for spacing/z-index/shadow values; the `@theme`
+tokens are the documentation, the utilities are the implementation.

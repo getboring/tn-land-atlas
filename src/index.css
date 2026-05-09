@@ -1,11 +1,120 @@
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════
+   HOLSTON SCOUT — Design Token System
+   Parent brand: Holston Intel · Vertical: Land
+   "Scout the ground. Know the build."
+   ═══════════════════════════════════════════════════════════ */
+
 @theme {
-  --color-brand-navy: #0f172a;
-  --color-brand-navy-light: #1e3a5f;
-  --color-brand-stone: #94a3b8;
-  --color-brand-parchment: #f8fafc;
-  --color-brand-copper: #d97706;
+  /* ──────────────────────────────────────────────────────────
+     PALETTE — Holston Platform · Land vertical
+     Hex values are the canonical source of truth. Every
+     semantic alias below resolves to one of these.
+     ──────────────────────────────────────────────────────────
+       navy           #1A2B3C   primary chrome, primary text on parchment
+       navy-deep      #111D29   panels, dark surfaces, app icon background
+       navy-light     #1e3a5f   secondary chrome accent (legacy Button variant)
+       slate          #3E5C6B   secondary text, default parcel line, info
+       forest         #2A4A3A   environmental cues, success-adjacent
+       parchment      #F5F0E6   land base, work surfaces, label halos
+       stone          #D4C9B8   roads, dividers, borders, disabled surfaces
+       copper         #B8732E   selection, primary action, accent
+       copper-bright  #D4882F   hover, focus ring, secondary accent
+       success        #2F6B4F   functional positive
+       warning        #A15C1B   functional caution
+       error          #8F2D2D   functional negative
+       info           #3E5C6B   functional informational (alias to slate)
+     ────────────────────────────────────────────────────────── */
+
+  /* Brand tokens (canonical) */
+  --color-brand-navy:          #1A2B3C; /* Replaced: was #0f172a */
+  --color-brand-navy-deep:     #111D29;
+  --color-brand-navy-light:    #1e3a5f; /* Retained — used by Button 'navy' variant */
+  --color-brand-slate:         #3E5C6B;
+  --color-brand-forest:        #2A4A3A;
+  --color-brand-parchment:     #F5F0E6; /* Replaced: was #f8fafc */
+  --color-brand-stone:         #D4C9B8; /* Replaced: was #94a3b8 */
+  --color-brand-copper:        #B8732E; /* Replaced: was #d97706 */
+  --color-brand-copper-bright: #D4882F;
+
+  /* Functional tokens */
+  --color-brand-success: #2F6B4F; /* Replaced: was #2A6B4A */
+  --color-brand-warning: #A15C1B;
+  --color-brand-error:   #8F2D2D; /* Renamed from brand-danger; was #C0392B */
+  --color-brand-danger:  #8F2D2D; /* Alias for back-compat with existing usages */
+  --color-brand-info:    #3E5C6B;
+
+  /* Semantic aliases — components reference these, not raw hex.
+     One level of indirection so palette swaps don't ripple. */
+  --color-text-primary:        var(--color-brand-parchment);
+  --color-text-secondary:      var(--color-brand-stone);
+  --color-panel:               var(--color-brand-navy);
+  --color-panel-deep:          var(--color-brand-navy-deep);
+  --color-border-subtle:       color-mix(in oklch, var(--color-brand-stone) 20%, transparent);
+  --color-action:              var(--color-brand-copper);
+  --color-action-hover:        var(--color-brand-copper-bright);
+  --color-focus-ring:          var(--color-brand-copper);
+
+  /* Map-role tokens for the parcel overlay (raster basemap; vector
+     land/water/road/parks tokens deferred until we adopt vector tiles). */
+  --color-map-parcel-default:  var(--color-brand-slate);
+  --color-map-parcel-hover:    var(--color-brand-copper-bright);
+  --color-map-parcel-selected: var(--color-brand-copper);
+  --color-map-label-halo:      var(--color-brand-parchment);
+  --color-map-label-primary:   var(--color-brand-navy);
+
+  /* ── Typography ─────────────────────────────────────────── */
+  --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
+  --font-sans:    "Source Sans 3", "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono:    "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+
+  /* ── Radius ─────────────────────────────────────────────── */
+  --radius-xs:   4px;
+  --radius-sm:   6px;
+  --radius-card: 12px;
+  --radius-lg:   16px;
+  --radius-pill: 9999px;
+
+  /* ── Spacing scale (8px base grid) ──────────────────────── */
+  --spacing-panel: 16px;
+  --spacing-card:  20px;
+  --spacing-chrome: 52px;
+  --spacing-chrome-mobile: 48px;
+
+  /* ── Motion: slow, deliberate, atlas-like ───────────────── */
+  --duration-instant:  80ms;
+  --duration-fast:     150ms;
+  --duration-normal:   250ms;
+  --duration-slow:     350ms;
+  --duration-glacial:  600ms;
+  --ease-out:     cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out:  cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring:  cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --ease-bounce:  cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── Shadows ────────────────────────────────────────────── */
+  --shadow-panel: 0 4px 24px rgba(17, 29, 41, 0.35);
+  --shadow-card:  0 2px 12px rgba(17, 29, 41, 0.2);
+  --shadow-chrome: 0 1px 3px rgba(17, 29, 41, 0.4);
+
+  /* ── Z-index scale ──────────────────────────────────────── */
+  --z-map: 0;
+  --z-panel: 100;
+  --z-toolbar: 200;
+  --z-chrome: 300;
+  --z-dropdown: 400;
+  --z-modal: 500;
+  --z-toast: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GLOBAL RESETS & BRAND DEFAULTS
+   ═══════════════════════════════════════════════════════════ */
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
 }
 
 html, body, #root {
@@ -15,26 +124,98 @@ html, body, #root {
 }
 
 body {
-  background: #0f172a;
-  color: #e2e8f0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: var(--font-sans);
+  background-color: var(--color-brand-navy);
+  color: var(--color-brand-parchment);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
+/* ── Accessibility: reduced motion ────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Accessibility: focus ring (copper, visible only on keyboard) ── */
+:focus-visible {
+  outline: 2px solid var(--color-brand-copper);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* suppress focus ring on mouse click */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Brand selection color ────────────────────────────────── */
+::selection {
+  background-color: color-mix(in oklch, var(--color-brand-copper) 30%, transparent);
+  color: var(--color-brand-parchment);
+}
+
+/* ── Custom scrollbar (panels, dropdowns) ─────────────────── */
+.brand-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-brand-slate) transparent;
+}
+.brand-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.brand-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.brand-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--color-brand-slate);
+  border-radius: var(--radius-pill);
+}
+.brand-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-brand-copper);
+}
+
+/* ── Utility: data text (mono + tabular nums for tabular alignment) ── */
+.data-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.data-label {
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-brand-stone);
+}
+
+/* ── iOS safe-area utilities ──────────────────────────────── */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* ═══════════════════════════════════════════════════════════
+   MAPLIBRE OVERRIDES (load-bearing — see AGENTS.md)
+   ═══════════════════════════════════════════════════════════ */
+
+/* Popup theming (Holston palette) */
 .maplibregl-popup-content {
-  background: rgba(15, 23, 42, 0.95) !important;
-  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  background: rgba(26, 43, 60, 0.95) !important;
+  border: 1px solid rgba(212, 201, 184, 0.2) !important;
   border-radius: 10px !important;
-  color: #e2e8f0 !important;
+  color: #F5F0E6 !important;
   padding: 10px 12px !important;
   font-size: 12px !important;
 }
 .maplibregl-popup-tip {
-  border-top-color: rgba(15, 23, 42, 0.95) !important;
+  border-top-color: rgba(26, 43, 60, 0.95) !important;
 }
 
-/* iOS / Android: kill the 300ms tap delay and prevent text selection on
-   double-tap of buttons. This is the 2026 best-practice baseline (a button
-   should never be a text-selection trigger). */
+/* iOS / Android: kill the 300ms tap delay; buttons should never be a
+   text-selection trigger. */
 button,
 [role="button"],
 input,
@@ -50,49 +231,58 @@ button,
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Visible focus ring for keyboard users. focus-visible avoids showing the
-   ring on click for mouse/touch users. */
-button:focus-visible,
-[role="button"]:focus-visible,
-input:focus-visible {
-  outline: 2px solid #d97706;
-  outline-offset: 2px;
+/* Backdrop-filter is broadly supported in 2026 (Baseline since 2022) but old
+   field-issued Android tablets still ship without it. Fall back to a solid
+   navy-deep so panels stay legible instead of going transparent. Targets
+   Tailwind's compiled .backdrop-blur* classes. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  [class*="backdrop-blur"] {
+    background-color: var(--color-brand-navy-deep) !important;
+  }
 }
 
-/* iOS notch / home indicator. The map shell ignores the inset (it should
-   reach the edges) but interactive UI inside respects it. */
-.safe-top { padding-top: env(safe-area-inset-top); }
-.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
-
-/* MapLibre native controls — bump to a comfortable 40x40 (was 29x29). The
-   library defaults are below iOS HIG (44pt) and Material 3 (48dp). 40px is a
-   reasonable middle ground that keeps the desktop UI dense without
-   sacrificing touch usability. */
+/* MapLibre native controls — instrument-grade restyle.
+   - 40x40 buttons (was 29x29; below WCAG 2.5.5 AA)
+   - navy-deep panel + parchment icons + copper hover
+   - matches the bottom action bar's visual language so all map chrome
+     reads as one cohesive instrument set. */
+.maplibregl-ctrl-group {
+  background: var(--color-brand-navy-deep) !important;
+  border: 1px solid var(--color-border-subtle) !important;
+  border-radius: var(--radius-card) !important;
+  box-shadow: var(--shadow-chrome) !important;
+  overflow: hidden;
+}
 .maplibregl-ctrl-group button {
   width: 40px !important;
   height: 40px !important;
+  background-color: transparent !important;
+  border-color: var(--color-border-subtle) !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--color-border-subtle) !important;
+}
+.maplibregl-ctrl-group button:hover {
+  background-color: color-mix(in oklch, var(--color-brand-copper) 18%, transparent) !important;
 }
 .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
   width: 100%;
   height: 100%;
+  /* Tint the bundled SVG icons toward parchment. invert flips black to
+     white; the slight brightness drop nudges the result to parchment. */
+  filter: invert(0.92) sepia(0.06) hue-rotate(8deg);
+}
+.maplibregl-ctrl-group button[disabled] .maplibregl-ctrl-icon {
+  opacity: 0.4;
+}
+/* The export-control popup (PDF/PNG settings) inherits the same skin. */
+.maplibregl-export-list {
+  background: var(--color-brand-navy-deep) !important;
+  color: var(--color-brand-parchment) !important;
+  border: 1px solid var(--color-border-subtle) !important;
 }
 
 /* Push the maplibre attribution AND the bottom-right native control cluster
-   above our bottom action bar (which sits at bottom-3 = 12px with h-14 = 56px
-   plus safe-area). 88px clears it on every viewport.
-
-   Without this, on tablet and mobile our bar overlaps the attribution and
-   the zoom/locate/fullscreen/export buttons — the audit logged 5 overlaps
-   on mobile alone. */
+   above the bottom action bar (which sits at bottom-3 with h-14 + safe-area). */
 .maplibregl-ctrl-bottom-right { bottom: 5.5rem !important; }
 .maplibregl-ctrl-bottom-left { bottom: 0.25rem !important; }
-
-/* Honor the user's reduced-motion preference. The map's flyTo transitions,
-   the spinner pulse, and any css transitions fall back to instant. */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}

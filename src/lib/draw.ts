@@ -21,19 +21,23 @@ export function createDraw(map: maplibregl.Map, handlers: DrawHandlers): TerraDr
     adapter: new TerraDrawMapLibreGLAdapter({ map }),
     modes: [
       new TerraDrawPolygonMode({
+        // Holston copper — same selection language used by parcels-selected.
+        // The lasso is "in-progress selection" so it shares that visual.
         styles: {
-          fillColor: '#fbbf24',
+          fillColor: '#B8732E',
           fillOpacity: 0.15,
-          outlineColor: '#fbbf24',
+          outlineColor: '#B8732E',
           outlineWidth: 2,
-          closingPointColor: '#fbbf24',
-          closingPointOutlineColor: '#fbbf24',
+          closingPointColor: '#B8732E',
+          closingPointOutlineColor: '#B8732E',
           closingPointWidth: 2,
         },
       }),
       new TerraDrawLineStringMode({
+        // Copper-bright — distinct from selection (the line isn't a commit,
+        // it's a measurement). Same warm family, brighter saturation.
         styles: {
-          lineStringColor: '#00ffff',
+          lineStringColor: '#D4882F',
           lineStringWidth: 3,
         },
       }),

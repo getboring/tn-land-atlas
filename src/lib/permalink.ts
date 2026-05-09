@@ -23,13 +23,21 @@ export const DEFAULT_MAP_VIEW = DEFAULT_VIEW
 
 export function parsePermalink(search: string): PermalinkState {
   const params = new URLSearchParams(search)
-  const lng = Number(params.get('lng'))
-  const lat = Number(params.get('lat'))
-  const z = Number(params.get('z'))
-  const view: MapViewState | null =
-    Number.isFinite(lng) && Number.isFinite(lat) && Number.isFinite(z) && z >= 0 && z <= 22
-      ? { lng, lat, zoom: z }
-      : null
+  const lngRaw = params.get('lng')
+  const latRaw = params.get('lat')
+  const zRaw = params.get('z')
+  // Require all three params to be present. Number(null) -> 0 which would
+  // otherwise sneak past the isFinite check and produce a bogus null-island
+  // view at lng=0 lat=0.
+  let view: MapViewState | null = null
+  if (lngRaw && latRaw && zRaw) {
+    const lng = Number(lngRaw)
+    const lat = Number(latRaw)
+    const z = Number(zRaw)
+    if (Number.isFinite(lng) && Number.isFinite(lat) && Number.isFinite(z) && z >= 0 && z <= 22) {
+      view = { lng, lat, zoom: z }
+    }
+  }
   const parcelKey = params.get('parcel') || null
   return { view, parcelKey }
 }
