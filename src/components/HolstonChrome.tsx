@@ -22,7 +22,7 @@ export function HolstonChrome({ centerSlot, rightSlot, children }: HolstonChrome
           flex items-center px-4 gap-4
           bg-bg
           border-b border-brand/20
-          shadow-[0_1px_3px_rgba(17,29,41,0.4)]
+          shadow-[0_1px_3px_rgba(2,4,10,0.4)]
         "
       >
         {/* Left: brand wordmark — Survey Corner mark + Holston Scout */}
@@ -39,7 +39,7 @@ export function HolstonChrome({ centerSlot, rightSlot, children }: HolstonChrome
             Holston Scout
           </span>
           <span
-            className="hidden sm:inline-block w-px h-4 bg-brand-slate/40"
+            className="hidden sm:inline-block w-px h-4 bg-border-default/60"
             aria-hidden="true"
           />
           <span className="hidden sm:inline text-text-tertiary text-[10px] font-sans font-semibold uppercase tracking-[0.12em] leading-none">
