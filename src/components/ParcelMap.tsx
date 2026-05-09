@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import mlcontour from 'maplibre-contour'
@@ -8,7 +8,7 @@ import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey, que
 import type { ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Search, X, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter, Star, Copy, Map as MapIcon, Eye, Clock, Layers } from 'lucide-react'
+import { Search, X, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter, Star, Copy, Map as MapIcon, Eye, Clock, Layers, Home, Printer, Keyboard, AlertTriangle } from 'lucide-react'
 import { toggleSaved, useIsSaved, pushRecent, useRecents, type RecentParcel } from '@/lib/storage'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
 import type { PropertyData } from '@/lib/supabase-queries'
@@ -182,6 +182,9 @@ export default function ParcelMap() {
   const [contoursVisible, setContoursVisible] = useState(false)
   const [basemap, setBasemap] = useState<Basemap>('satellite')
   const [layersOpen, setLayersOpen] = useState(false)
+  const [locating, setLocating] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [errorToast, setErrorToast] = useState<string | null>(null)
   const [drawMode, setDrawModeState] = useState<DrawMode>('idle')
   const [rulerDistance, setRulerDistance] = useState<string | null>(null)
   const [toolsOpen, setToolsOpen] = useState(false)
@@ -312,6 +315,14 @@ export default function ParcelMap() {
       'bottom-right',
     )
     geolocateRef.current = geolocate
+    // 'locating' state powers the pulse animation on the bottom-bar Locate
+    // button. MapLibre's native control doesn't expose a 'requesting' event,
+    // so we set true on user-trigger and clear on either resolution event.
+    geolocate.on('geolocate', () => setLocating(false))
+    geolocate.on('error', () => {
+      setLocating(false)
+      setErrorToast("Couldn't get your location. Check that location access is allowed for this site.")
+    })
 
     m.on('load', () => {
       // Defensive resize so the canvas matches the post-mount flex container
@@ -717,6 +728,7 @@ export default function ParcelMap() {
     } catch (e) {
       console.error('[search] failed', e)
       setSearchResults([])
+      setErrorToast("Couldn't reach the parcel service. Check your connection and try again.")
     } finally {
       setSearching(false)
     }
@@ -817,10 +829,14 @@ export default function ParcelMap() {
         t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
       const isSlash = e.key === '/' && !inField
       const isCmdK = (e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)
+      const isQuestion = e.key === '?' && !inField
       if (isSlash || isCmdK) {
         e.preventDefault()
         searchInputRef.current?.focus()
         searchInputRef.current?.select()
+      } else if (isQuestion) {
+        e.preventDefault()
+        setShortcutsOpen((v) => !v)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -1003,6 +1019,7 @@ export default function ParcelMap() {
             selectParcel(f, map.current)
           } catch (e) {
             console.error('[recents] parcel lookup failed', e)
+            setErrorToast("Couldn't load that parcel. The county service may be unavailable.")
           }
         }}
       />
@@ -1028,14 +1045,18 @@ export default function ParcelMap() {
             text="Layers"
           />
           <ActionBarButton
-            label="Drawing tools"
-            pressed={toolsOpen}
+            label={drawMode === 'lasso' ? 'Lasso active' : drawMode === 'ruler' ? 'Ruler active' : 'Drawing tools'}
+            pressed={toolsOpen || drawMode !== 'idle'}
             onClick={() => {
               setToolsOpen((v) => !v)
               setLayersOpen(false)
             }}
-            icon={<Ruler className="w-5 h-5" />}
-            text="Tools"
+            icon={
+              drawMode === 'lasso'
+                ? <Lasso className="w-5 h-5" />
+                : <Ruler className="w-5 h-5" />
+            }
+            text={drawMode === 'lasso' ? 'Lasso' : drawMode === 'ruler' ? 'Ruler' : 'Tools'}
           />
           <ActionBarButton
             label={filtersActiveCount(filters) > 0 ? `Filter · ${filtersActiveCount(filters)}` : 'Filter'}
@@ -1045,16 +1066,24 @@ export default function ParcelMap() {
             text={filtersActiveCount(filters) > 0 ? `Filter · ${filtersActiveCount(filters)}` : 'Filter'}
           />
           <ActionBarButton
-            label="Locate me"
-            onClick={() => geolocateRef.current?.trigger()}
-            icon={<LocateFixed className="w-5 h-5" />}
-            text="Locate"
+            label={locating ? 'Locating…' : 'Locate me'}
+            pressed={locating}
+            onClick={() => {
+              setLocating(true)
+              geolocateRef.current?.trigger()
+            }}
+            icon={
+              <LocateFixed
+                className={cn('w-5 h-5', locating && 'animate-pulse text-brand')}
+              />
+            }
+            text={locating ? 'Locating' : 'Locate'}
           />
           <ActionBarButton
-            label="Recenter to overview"
+            label="Home view"
             onClick={() => map.current?.flyTo({ center: [-82.35, 36.35], zoom: 11, essential: true })}
-            icon={<Crosshair className="w-5 h-5" />}
-            text="Reset"
+            icon={<Home className="w-5 h-5" />}
+            text="Home"
           />
         </div>
       </nav>
@@ -1278,9 +1307,29 @@ export default function ParcelMap() {
         </div>
       )}
 
+      {/* Empty-map hint — appears when nothing is loaded and the user isn't
+          mid-search. Steers them to the two ways into the data. */}
+      {!loading && parcelCount === 0 && !searchResults && !selectedParcel && (
+        <div
+          role="note"
+          className="absolute bottom-24 left-1/2 -translate-x-1/2 z-10 max-w-[90vw] sm:max-w-md px-4 py-2 rounded-full bg-surface/85 backdrop-blur border border-border-default text-xs text-text-tertiary text-center pointer-events-none"
+        >
+          Zoom in to load parcels — or search for an owner, address, or parcel ID.
+        </div>
+      )}
+
+      {/* Error toast — surfaces failures that would otherwise be silent.
+          Auto-dismisses after 5 seconds; click to dismiss. */}
+      {errorToast && (
+        <ErrorToast message={errorToast} onDismiss={() => setErrorToast(null)} />
+      )}
+
+      {/* Keyboard shortcuts overlay — opens on '?'. */}
+      <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
       {/* Detail sidebar */}
       {selectedParcel && (
-        <div className="absolute top-16 right-3 left-3 sm:left-auto z-20 sm:w-80 max-h-[calc(100%-6rem)] overflow-y-auto">
+        <div data-print-target className="absolute top-16 right-3 left-3 sm:left-auto z-20 sm:w-80 max-h-[calc(100%-6rem)] overflow-y-auto">
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-start justify-between gap-1">
@@ -1312,20 +1361,41 @@ export default function ParcelMap() {
               />
               <ParcelInsights f={selectedParcel} />
 
-              {/* Hidden when empty — fields the county doesn't populate
-                  (PROPTYPE, SALELABEL, ST_NUM/STREET) drop entirely instead
-                  of decorating the panel with permanent dashes. */}
-              <DetailField label="Parcel ID" value={selectedParcel.properties.GISLINK} mono />
-              <DetailField label="Owner" value={[selectedParcel.properties.OWNER, selectedParcel.properties.OWNER2].filter(Boolean).join('\n')} />
-              <DetailField label="Address" value={selectedParcel.properties.ADDRESS} />
-              <DetailField label="County" value={selectedParcel.properties.COUNTYNAME} />
-              <DetailField label="Acres" value={selectedParcel.properties.CALC_ACRE != null ? `${selectedParcel.properties.CALC_ACRE.toFixed(3)} ac` : null} mono />
-              <DetailField label="Zoning" value={selectedParcel.properties.ZONING} mono />
-              <DetailField label="Appraised Value" value={fmtMoney(selectedParcel.properties.APPRAISAL)} mono />
-              <DetailField label="Last Sale Price" value={fmtMoney(selectedParcel.properties.PRICE)} mono />
-              <DetailField label="Last Sale Date" value={fmtDate(selectedParcel.properties.SALEDATE)} mono />
-              <DetailField label="Mailing Address" value={selectedParcel.properties.MAILADDR} />
-              <DetailField label="Mail City/ST/ZIP" value={[selectedParcel.properties.MAILCITY, selectedParcel.properties.STATE].filter(Boolean).join(', ') + (selectedParcel.properties.ZIP ? ' ' + selectedParcel.properties.ZIP : '')} mono />
+              {/* Section: Parcel — what identifies this lot. */}
+              <DetailSection label="Parcel">
+                <DetailField label="Parcel ID" value={selectedParcel.properties.GISLINK} mono />
+                <DetailField label="Address" value={selectedParcel.properties.ADDRESS} />
+                <DetailField label="County" value={selectedParcel.properties.COUNTYNAME} />
+                <DetailField
+                  label="Acres"
+                  value={selectedParcel.properties.CALC_ACRE != null ? `${selectedParcel.properties.CALC_ACRE.toFixed(2)} ac` : null}
+                  mono
+                />
+                <DetailField label="Zoning" value={selectedParcel.properties.ZONING} mono />
+              </DetailSection>
+
+              {/* Section: Owner — who holds title and where the tax bill goes. */}
+              <DetailSection label="Owner">
+                <DetailField label="Owner" value={[selectedParcel.properties.OWNER, selectedParcel.properties.OWNER2].filter(Boolean).join('\n')} />
+                <DetailField label="Mailing Address" value={selectedParcel.properties.MAILADDR} />
+                <DetailField
+                  label="Mail City/ST/ZIP"
+                  value={[selectedParcel.properties.MAILCITY, selectedParcel.properties.STATE].filter(Boolean).join(', ') + (selectedParcel.properties.ZIP ? ' ' + selectedParcel.properties.ZIP : '')}
+                  mono
+                />
+              </DetailSection>
+
+              {/* Section: Valuation — appraised + last sale. Sale date carries a
+                  relative-time hint so the user doesn't have to do mental math. */}
+              <DetailSection label="Valuation">
+                <DetailField label="Appraised Value" value={fmtMoney(selectedParcel.properties.APPRAISAL)} mono />
+                <DetailField label="Last Sale Price" value={fmtMoney(selectedParcel.properties.PRICE)} mono />
+                <DetailField label="Last Sale Date" value={fmtSaleDateRelative(selectedParcel.properties.SALEDATE)} mono />
+              </DetailSection>
+
+              {/* Section: Coordinates — for driving directions or copying into
+                  an external GIS tool. Click the value to copy. */}
+              <CoordinatesField f={selectedParcel} />
 
               {enrichLoading && (
                 <div className="py-2 text-text-tertiary animate-pulse">Loading enriched data…</div>
@@ -1692,6 +1762,14 @@ function ParcelActions({
           {copiedAddr ? 'Copied' : 'Copy address'}
         </button>
       )}
+      <button
+        type="button"
+        onClick={() => window.print()}
+        aria-label="Print this parcel"
+        className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10 print:hidden"
+      >
+        <Printer className="w-3.5 h-3.5" /> Print
+      </button>
       {ownerForSearch && (
         <button
           type="button"
@@ -1793,6 +1871,83 @@ function RecentParcelsPill({ onPick }: { onPick: (gislink: string) => void }) {
   )
 }
 
+// ErrorToast — small dismissible banner for surfacing failures that would
+// otherwise be silent (failed search, failed parcel load, geolocate denied).
+// Auto-dismisses after 5s; click to dismiss earlier.
+function ErrorToast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 5000)
+    return () => clearTimeout(t)
+  }, [message, onDismiss])
+  return (
+    <div
+      role="alert"
+      onClick={onDismiss}
+      className="absolute top-16 left-1/2 -translate-x-1/2 z-40 max-w-[90vw] sm:max-w-md px-4 py-2.5 rounded-lg bg-stamp/95 text-white text-xs shadow-xl cursor-pointer flex items-start gap-2"
+    >
+      <AlertTriangle className="w-4 h-4 flex-none mt-0.5" />
+      <div className="flex-1">{message}</div>
+      <X className="w-4 h-4 flex-none mt-0.5 opacity-70" />
+    </div>
+  )
+}
+
+// ShortcutsOverlay — opens on '?'. Lists every keyboard shortcut the app
+// supports. Uses a native HTMLDialogElement so focus trap + Escape-to-close
+// come for free.
+function ShortcutsOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const d = ref.current
+    if (!d) return
+    if (open && !d.open) d.showModal()
+    if (!open && d.open) d.close()
+  }, [open])
+
+  const items: Array<[string, string]> = [
+    ['/', 'Focus search'],
+    ['Cmd-K · Ctrl-K', 'Focus search'],
+    ['Esc', 'Close panel / clear search'],
+    ['Enter', 'Run search'],
+    ['?', 'Toggle this help'],
+  ]
+
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === ref.current) onClose()
+      }}
+      className="m-auto p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-80 rounded-2xl"
+    >
+      <div className="bg-surface/95 border border-border-default rounded-2xl shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
+          <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+            <Keyboard className="w-4 h-4" /> Keyboard shortcuts
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <ul className="divide-y divide-border-subtle">
+          {items.map(([keys, label]) => (
+            <li key={keys} className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs">
+              <span className="text-text-primary">{label}</span>
+              <kbd className="data-value text-text-tertiary text-[11px]">{keys}</kbd>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </dialog>
+  )
+}
+
 // SearchSuggestions — type-ahead dropdown sourced from the user's recently
 // viewed parcels. Substring match on owner / address / gislink. Caps at 5.
 // When `query` is empty and the input is focused, shows the most recent 5
@@ -1879,6 +2034,80 @@ function SaveButton({ gislink }: { gislink: string | null | undefined }) {
       <Star className={cn('w-4 h-4 transition-colors', saved ? 'fill-brand text-brand' : '')} />
     </button>
   )
+}
+
+// DetailSection — labelled group of DetailFields with a small uppercase
+// micro-header. Hides itself if all children render null (every DetailField
+// returns null when its value is missing).
+function DetailSection({ label, children }: { label: string; children: React.ReactNode }) {
+  const arr = React.Children.toArray(children).filter((c): c is React.ReactElement => {
+    if (!React.isValidElement(c)) return false
+    // Every DetailField bails to null when its value is empty; checking the
+    // raw prop here matches that gate without re-rendering twice.
+    const props = c.props as { value?: unknown }
+    if (props == null) return true
+    if (props.value == null) return false
+    if (typeof props.value === 'string' && props.value.trim() === '') return false
+    if (typeof props.value === 'string' && props.value.trim() === ',') return false
+    return true
+  })
+  if (arr.length === 0) return null
+  return (
+    <div className="pt-2 border-t border-border-subtle first:pt-0 first:border-0">
+      <div className="data-label mb-1.5">{label}</div>
+      <div className="space-y-1.5">{children}</div>
+    </div>
+  )
+}
+
+// CoordinatesField — bottom-of-panel lat/lon pair, click-to-copy. Useful for
+// pasting into a phone Maps app or an external GIS tool.
+function CoordinatesField({ f }: { f: ParcelFeature }) {
+  const c = centroid(f.geometry)
+  const [copied, setCopied] = useState(false)
+  if (!c) return null
+  const [lng, lat] = c
+  const formatted = `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+  const onCopy = () => {
+    if (!navigator.clipboard) return
+    navigator.clipboard.writeText(formatted).then(
+      () => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      },
+      () => {},
+    )
+  }
+  return (
+    <div className="pt-2 border-t border-border-subtle">
+      <div className="data-label mb-1.5">Coordinates</div>
+      <button
+        type="button"
+        onClick={onCopy}
+        aria-label={copied ? 'Coordinates copied' : 'Copy coordinates'}
+        className="data-value text-text-primary text-left hover:text-brand transition-colors inline-flex items-center gap-1.5"
+      >
+        {formatted}
+        {copied ? (
+          <Check className="w-3 h-3 text-green-400" />
+        ) : (
+          <Copy className="w-3 h-3 text-text-tertiary" />
+        )}
+      </button>
+    </div>
+  )
+}
+
+// fmtSaleDateRelative — formatted date plus a relative-time tail so the user
+// doesn't have to do mental subtraction to gauge how stale the sale price is.
+function fmtSaleDateRelative(raw: string | null | undefined): string | null {
+  const formatted = fmtDate(raw)
+  if (formatted === '—') return null
+  const yrs = yearsHeld(raw)
+  if (yrs == null || yrs < 0) return formatted
+  if (yrs < 1) return `${formatted} (this year)`
+  if (yrs < 2) return `${formatted} (1 yr ago)`
+  return `${formatted} (${Math.round(yrs)} yrs ago)`
 }
 
 function DetailField({

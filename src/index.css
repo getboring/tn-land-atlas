@@ -220,3 +220,59 @@ button, [role="button"] {
 /* Push the maplibre attribution + native cluster above the bottom action bar */
 .maplibregl-ctrl-bottom-right { bottom: 5.5rem !important; }
 .maplibregl-ctrl-bottom-left  { bottom: 0.25rem !important; }
+
+/* ═══════════════════════════════════════════════════════════
+   PRINT — client-meeting handout layout
+   When the user hits Print from the parcel detail panel, we strip
+   the chrome and the map, then re-flow the detail card as a regular
+   block on white paper. The card itself opts in via [data-print-target].
+   ═══════════════════════════════════════════════════════════ */
+
+@media print {
+  html, body, #root {
+    background: white !important;
+    color: black !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+  /* Hide every UI surface that isn't the detail panel — chrome, map
+     canvas, search bar, action bars, popovers, ScaleControl, etc. */
+  header[role="banner"],
+  div[role="application"] > div:first-child,        /* the maplibre canvas wrapper */
+  nav[aria-label="Map actions"],
+  div[role="menu"],
+  div[aria-label="Recent parcels"],
+  [data-recents-pill],
+  .maplibregl-ctrl,
+  .print\:hidden,
+  div.absolute.top-3,                               /* search-bar row */
+  div[role="status"] {
+    display: none !important;
+  }
+  /* Restore the detail panel: take it out of position:absolute layout
+     and let it flow on the page in normal block context. */
+  [data-print-target] {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    z-index: auto !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+  [data-print-target] * {
+    color: black !important;
+    background: transparent !important;
+    border-color: #cbd5e1 !important;
+  }
+  /* Keep the section break lines visible on paper. */
+  [data-print-target] .border-t {
+    border-top: 1px solid #cbd5e1 !important;
+  }
+  /* Page margins so the panel doesn't bleed off the sheet. */
+  @page {
+    margin: 0.75in;
+  }
+}
