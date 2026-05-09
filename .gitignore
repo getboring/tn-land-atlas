@@ -31,3 +31,6 @@ dist-ssr
 
 # Wrangler local state
 /.wrangler/
+
+# Out-of-band agent planning artifacts. Not source; not part of the app.
+/projects/
