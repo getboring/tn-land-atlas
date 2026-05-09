@@ -24,12 +24,12 @@ export function createDraw(map: maplibregl.Map, handlers: DrawHandlers): TerraDr
         // Holston copper — same selection language used by parcels-selected.
         // The lasso is "in-progress selection" so it shares that visual.
         styles: {
-          fillColor: '#B8732E',
+          fillColor: '#F59E0B',
           fillOpacity: 0.15,
-          outlineColor: '#B8732E',
+          outlineColor: '#F59E0B',
           outlineWidth: 2,
-          closingPointColor: '#B8732E',
-          closingPointOutlineColor: '#B8732E',
+          closingPointColor: '#F59E0B',
+          closingPointOutlineColor: '#F59E0B',
           closingPointWidth: 2,
         },
       }),
@@ -37,7 +37,7 @@ export function createDraw(map: maplibregl.Map, handlers: DrawHandlers): TerraDr
         // Copper-bright — distinct from selection (the line isn't a commit,
         // it's a measurement). Same warm family, brighter saturation.
         styles: {
-          lineStringColor: '#D4882F',
+          lineStringColor: '#FCD34D',
           lineStringWidth: 3,
         },
       }),

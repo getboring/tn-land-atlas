@@ -1,115 +1,75 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════
-   HOLSTON SCOUT — Design Token System
+   HOLSTON SCOUT — converted to the HolstonBuilder design family
    Parent brand: Holston Intel · Vertical: Land
    "Scout the ground. Know the build."
+
+   This palette + type system is byte-aligned with the @holstonbuilder
+   tailwind.config.js so Scout and HolstonBuilder feel like one product
+   line. When HolstonBuilder updates a token, mirror it here.
    ═══════════════════════════════════════════════════════════ */
 
 @theme {
-  /* ──────────────────────────────────────────────────────────
-     PALETTE — Holston Platform · Land vertical
-     Hex values are the canonical source of truth. Every
-     semantic alias below resolves to one of these.
-     ──────────────────────────────────────────────────────────
-       navy           #1A2B3C   primary chrome, primary text on parchment
-       navy-deep      #111D29   panels, dark surfaces, app icon background
-       navy-light     #1e3a5f   secondary chrome accent (legacy Button variant)
-       slate          #3E5C6B   secondary text, default parcel line, info
-       forest         #2A4A3A   environmental cues, success-adjacent
-       parchment      #F5F0E6   land base, work surfaces, label halos
-       stone          #D4C9B8   roads, dividers, borders, disabled surfaces
-       copper         #B8732E   selection, primary action, accent
-       copper-bright  #D4882F   hover, focus ring, secondary accent
-       success        #2F6B4F   functional positive
-       warning        #A15C1B   functional caution
-       error          #8F2D2D   functional negative
-       info           #3E5C6B   functional informational (alias to slate)
-     ────────────────────────────────────────────────────────── */
+  /* ── Background layers ──────────────────────────────────── */
+  --color-bg:                 #02040A;
+  --color-surface:            #0F1729;
+  --color-surface-elevated:   #1A2332;
+  --color-surface-pressed:    #1E293B;
 
-  /* Brand tokens (canonical) */
-  --color-brand-navy:          #1A2B3C; /* Replaced: was #0f172a */
-  --color-brand-navy-deep:     #111D29;
-  --color-brand-navy-light:    #1e3a5f; /* Retained — used by Button 'navy' variant */
-  --color-brand-slate:         #3E5C6B;
-  --color-brand-forest:        #2A4A3A;
-  --color-brand-parchment:     #F5F0E6; /* Replaced: was #f8fafc */
-  --color-brand-stone:         #D4C9B8; /* Replaced: was #94a3b8 */
-  --color-brand-copper:        #B8732E; /* Replaced: was #d97706 */
-  --color-brand-copper-bright: #D4882F;
+  /* ── Borders ────────────────────────────────────────────── */
+  --color-border-subtle:      #1E293B;
+  --color-border-default:     #334155;
+  --color-border-strong:      #475569;
 
-  /* Functional tokens */
-  --color-brand-success: #2F6B4F; /* Replaced: was #2A6B4A */
-  --color-brand-warning: #A15C1B;
-  --color-brand-error:   #8F2D2D; /* Renamed from brand-danger; was #C0392B */
-  --color-brand-danger:  #8F2D2D; /* Alias for back-compat with existing usages */
-  --color-brand-info:    #3E5C6B;
+  /* ── Text ───────────────────────────────────────────────── */
+  --color-text-primary:       #F8FAFC;
+  --color-text-secondary:     #CBD5E1;
+  --color-text-tertiary:      #94A3B8;
+  --color-text-muted:         #64748B;
+  --color-text-inverse:       #020617;
 
-  /* Semantic aliases — components reference these, not raw hex.
-     One level of indirection so palette swaps don't ripple. */
-  --color-text-primary:        var(--color-brand-parchment);
-  --color-text-secondary:      var(--color-brand-stone);
-  --color-panel:               var(--color-brand-navy);
-  --color-panel-deep:          var(--color-brand-navy-deep);
-  --color-border-subtle:       color-mix(in oklch, var(--color-brand-stone) 20%, transparent);
-  --color-action:              var(--color-brand-copper);
-  --color-action-hover:        var(--color-brand-copper-bright);
-  --color-focus-ring:          var(--color-brand-copper);
+  /* ── Brand (amber — primary action / selection) ─────────── */
+  --color-brand:              #F59E0B;
+  --color-brand-strong:       #FCD34D;
 
-  /* Map-role tokens for the parcel overlay (raster basemap; vector
-     land/water/road/parks tokens deferred until we adopt vector tiles). */
-  --color-map-parcel-default:  var(--color-brand-slate);
-  --color-map-parcel-hover:    var(--color-brand-copper-bright);
-  --color-map-parcel-selected: var(--color-brand-copper);
-  --color-map-label-halo:      var(--color-brand-parchment);
-  --color-map-label-primary:   var(--color-brand-navy);
+  /* ── Stamp (ink-red — escalation, overdue, irreversible) ── */
+  --color-stamp:              #DC2626;
 
-  /* ── Typography ─────────────────────────────────────────── */
-  --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
-  --font-sans:    "Source Sans 3", "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono:    "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", monospace;
+  /* ── Functional state ───────────────────────────────────── */
+  --color-success:            #22C55E;
+  --color-warning:            #FBBF24;
+  --color-danger:             #F87171;
+  --color-info:               #60A5FA;
+
+  /* ── Map-role tokens (parcel overlay, vector fallback) ──── */
+  --color-map-parcel-default:  #94A3B8;  /* text-tertiary — calm slate-blue */
+  --color-map-parcel-hover:    #FCD34D;  /* brand-strong */
+  --color-map-parcel-selected: #F59E0B;  /* brand */
+  --color-map-label-halo:      #F8FAFC;
+  --color-map-label-primary:   #02040A;
+
+  /* ── Typography (one family) ────────────────────────────── */
+  --font-sans:    "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "SFMono-Regular", Menlo, "Cascadia Mono", monospace;
 
   /* ── Radius ─────────────────────────────────────────────── */
-  --radius-xs:   4px;
-  --radius-sm:   6px;
+  --radius-xs:    4px;
+  --radius-sm:    6px;
   --radius-card: 12px;
   --radius-lg:   16px;
   --radius-pill: 9999px;
 
-  /* ── Spacing scale (8px base grid) ──────────────────────── */
-  --spacing-panel: 16px;
-  --spacing-card:  20px;
-  --spacing-chrome: 52px;
-  --spacing-chrome-mobile: 48px;
-
-  /* ── Motion: slow, deliberate, atlas-like ───────────────── */
-  --duration-instant:  80ms;
-  --duration-fast:     150ms;
-  --duration-normal:   250ms;
-  --duration-slow:     350ms;
-  --duration-glacial:  600ms;
-  --ease-out:     cubic-bezier(0, 0, 0.2, 1);
-  --ease-in-out:  cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-spring:  cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  --ease-bounce:  cubic-bezier(0.34, 1.56, 0.64, 1);
-
-  /* ── Shadows ────────────────────────────────────────────── */
-  --shadow-panel: 0 4px 24px rgba(17, 29, 41, 0.35);
-  --shadow-card:  0 2px 12px rgba(17, 29, 41, 0.2);
-  --shadow-chrome: 0 1px 3px rgba(17, 29, 41, 0.4);
-
-  /* ── Z-index scale ──────────────────────────────────────── */
-  --z-map: 0;
-  --z-panel: 100;
-  --z-toolbar: 200;
-  --z-chrome: 300;
-  --z-dropdown: 400;
-  --z-modal: 500;
-  --z-toast: 600;
+  /* ── Motion ─────────────────────────────────────────────── */
+  --duration-instant: 80ms;
+  --duration-fast:    150ms;
+  --duration-normal:  250ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ═══════════════════════════════════════════════════════════
-   GLOBAL RESETS & BRAND DEFAULTS
+   GLOBAL DEFAULTS
    ═══════════════════════════════════════════════════════════ */
 
 html {
@@ -125,14 +85,15 @@ html, body, #root {
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--color-brand-navy);
-  color: var(--color-brand-parchment);
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  font-feature-settings: "cv11" on, "ss03" on, "liga" on;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-/* ── Accessibility: reduced motion ────────────────────────── */
+/* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -142,115 +103,92 @@ body {
   }
 }
 
-/* ── Accessibility: focus ring (copper, visible only on keyboard) ── */
+/* Focus ring (amber, only visible on keyboard) */
 :focus-visible {
-  outline: 2px solid var(--color-brand-copper);
+  outline: 2px solid var(--color-brand);
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }
+:focus:not(:focus-visible) { outline: none; }
 
-/* suppress focus ring on mouse click */
-:focus:not(:focus-visible) {
-  outline: none;
-}
-
-/* ── Brand selection color ────────────────────────────────── */
 ::selection {
-  background-color: color-mix(in oklch, var(--color-brand-copper) 30%, transparent);
-  color: var(--color-brand-parchment);
+  background-color: color-mix(in oklch, var(--color-brand) 35%, transparent);
+  color: var(--color-text-primary);
 }
 
-/* ── Custom scrollbar (panels, dropdowns) ─────────────────── */
+/* Scoped scrollbar (panels, dropdowns) */
 .brand-scroll {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-brand-slate) transparent;
+  scrollbar-color: var(--color-border-default) transparent;
 }
-.brand-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-.brand-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
+.brand-scroll::-webkit-scrollbar { width: 6px; }
+.brand-scroll::-webkit-scrollbar-track { background: transparent; }
 .brand-scroll::-webkit-scrollbar-thumb {
-  background-color: var(--color-brand-slate);
+  background-color: var(--color-border-default);
   border-radius: var(--radius-pill);
 }
 .brand-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-brand-copper);
+  background-color: var(--color-brand);
 }
 
-/* ── Utility: data text (mono + tabular nums for tabular alignment) ── */
+/* Tabular monospace for numerics (parcel ID, dollars, dates, coords) */
 .data-value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 .data-label {
   font-family: var(--font-sans);
   font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--color-brand-stone);
+  color: var(--color-text-tertiary);
 }
 
-/* ── iOS safe-area utilities ──────────────────────────────── */
-.safe-top { padding-top: env(safe-area-inset-top); }
+/* iOS safe-area utilities */
+.safe-top    { padding-top: env(safe-area-inset-top); }
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 
 /* ═══════════════════════════════════════════════════════════
    MAPLIBRE OVERRIDES (load-bearing — see AGENTS.md)
    ═══════════════════════════════════════════════════════════ */
 
-/* Popup theming (Holston palette) */
+/* Popup theming */
 .maplibregl-popup-content {
-  background: rgba(26, 43, 60, 0.95) !important;
-  border: 1px solid rgba(212, 201, 184, 0.2) !important;
+  background: rgba(15, 23, 41, 0.95) !important;  /* surface */
+  border: 1px solid rgba(71, 85, 105, 0.4) !important;
   border-radius: 10px !important;
-  color: #F5F0E6 !important;
+  color: #F8FAFC !important;
   padding: 10px 12px !important;
   font-size: 12px !important;
 }
 .maplibregl-popup-tip {
-  border-top-color: rgba(26, 43, 60, 0.95) !important;
+  border-top-color: rgba(15, 23, 41, 0.95) !important;
 }
 
-/* iOS / Android: kill the 300ms tap delay; buttons should never be a
-   text-selection trigger. */
-button,
-[role="button"],
-input,
-select,
-textarea {
-  touch-action: manipulation;
-}
-
-button,
-[role="button"] {
+/* iOS / Android: kill the 300ms tap delay */
+button, [role="button"], input, select, textarea { touch-action: manipulation; }
+button, [role="button"] {
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Backdrop-filter is broadly supported in 2026 (Baseline since 2022) but old
-   field-issued Android tablets still ship without it. Fall back to a solid
-   navy-deep so panels stay legible instead of going transparent. Targets
-   Tailwind's compiled .backdrop-blur* classes. */
+/* Backdrop-filter fallback for older Android tablets */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   [class*="backdrop-blur"] {
-    background-color: var(--color-brand-navy-deep) !important;
+    background-color: var(--color-bg) !important;
   }
 }
 
 /* MapLibre native controls — instrument-grade restyle.
-   - 40x40 buttons (was 29x29; below WCAG 2.5.5 AA)
-   - navy-deep panel + parchment icons + copper hover
-   - matches the bottom action bar's visual language so all map chrome
-     reads as one cohesive instrument set. */
+   40x40 buttons (was 29x29; below WCAG 2.5.5 AA), surface panel,
+   parchment-tinted icons, brand hover. */
 .maplibregl-ctrl-group {
-  background: var(--color-brand-navy-deep) !important;
+  background: var(--color-bg) !important;
   border: 1px solid var(--color-border-subtle) !important;
   border-radius: var(--radius-card) !important;
-  box-shadow: var(--shadow-chrome) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4) !important;
   overflow: hidden;
 }
 .maplibregl-ctrl-group button {
@@ -263,26 +201,22 @@ button,
   border-top-color: var(--color-border-subtle) !important;
 }
 .maplibregl-ctrl-group button:hover {
-  background-color: color-mix(in oklch, var(--color-brand-copper) 18%, transparent) !important;
+  background-color: color-mix(in oklch, var(--color-brand) 18%, transparent) !important;
 }
 .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
   width: 100%;
   height: 100%;
-  /* Tint the bundled SVG icons toward parchment. invert flips black to
-     white; the slight brightness drop nudges the result to parchment. */
-  filter: invert(0.92) sepia(0.06) hue-rotate(8deg);
+  /* Tint the bundled SVG icons to text-primary. */
+  filter: invert(0.95) brightness(0.97);
 }
-.maplibregl-ctrl-group button[disabled] .maplibregl-ctrl-icon {
-  opacity: 0.4;
-}
-/* The export-control popup (PDF/PNG settings) inherits the same skin. */
+.maplibregl-ctrl-group button[disabled] .maplibregl-ctrl-icon { opacity: 0.4; }
+
 .maplibregl-export-list {
-  background: var(--color-brand-navy-deep) !important;
-  color: var(--color-brand-parchment) !important;
+  background: var(--color-bg) !important;
+  color: var(--color-text-primary) !important;
   border: 1px solid var(--color-border-subtle) !important;
 }
 
-/* Push the maplibre attribution AND the bottom-right native control cluster
-   above the bottom action bar (which sits at bottom-3 with h-14 + safe-area). */
+/* Push the maplibre attribution + native cluster above the bottom action bar */
 .maplibregl-ctrl-bottom-right { bottom: 5.5rem !important; }
-.maplibregl-ctrl-bottom-left { bottom: 0.25rem !important; }
+.maplibregl-ctrl-bottom-left  { bottom: 0.25rem !important; }

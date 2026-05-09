@@ -78,7 +78,11 @@ functions/api/
 e2e/map.spec.ts              48 tests x 3 viewports
 ```
 
-## Brand system (Holston Scout)
+## Brand system (Holston Scout — converted to HolstonBuilder family)
+
+Scout was rebranded from a navy/parchment/copper "luxurious" palette to
+the HolstonBuilder design family — same product line, same parent.
+When HolstonBuilder updates a token, mirror it here.
 
 Identity is centralized in three surfaces:
 
@@ -88,21 +92,26 @@ Identity is centralized in three surfaces:
   viewport via `flex-1`.
 - **`SurveyCornerMark`** — single SVG master used at every size from
   16px favicon through 1200px share image. Three lockups: inline
-  (chrome wordmark), app-icon (with navy-deep ring), one-color fallback.
-- **`@theme` tokens** in `index.css` — palette + type stack + spacing
-  + motion + shadows + z-index, plus semantic aliases (`text-primary`,
-  `panel`, `action`, `focus-ring`, `border-subtle`) and map-role tokens
-  (`map-parcel-default` = slate, `map-parcel-hover` = copper-bright,
-  `map-parcel-selected` = copper).
+  (chrome wordmark), app-icon (with bg ring), one-color fallback.
+  Outline = `#334155` border-default, accent = `#F59E0B` brand.
+- **`@theme` tokens** in `index.css` — HolstonBuilder palette
+  (`bg #02040A`, `surface #0F1729`, `surface-elevated #1A2332`,
+  `text-primary #F8FAFC`, `text-secondary #CBD5E1`,
+  `text-tertiary #94A3B8`, `brand #F59E0B`, `brand-strong #FCD34D`,
+  `stamp #DC2626`, `danger #F87171`) + Inter as the single type
+  family (sans + display) + system mono. Map-role tokens:
+  `map-parcel-default` = `text-tertiary` (#94A3B8 calm slate),
+  `map-parcel-hover` = `brand-strong` (#FCD34D),
+  `map-parcel-selected` = `brand` (#F59E0B).
 
 Map state is the brand's most distinctive surface:
 - Default outline: slate at 0.6 opacity (calm USGS-quad posture)
-- Hover: copper-bright outline + copper fill at 0.14 alpha (feature-state)
-- Selected: copper outline + copper fill at 0.24 alpha + corner-node
-  markers (parchment-filled, navy-stroked points at every polygon
-  vertex — the Survey Corner mark in miniature)
+- Hover: brand-strong outline + brand fill at 0.14 alpha (feature-state)
+- Selected: brand outline + brand fill at 0.24 alpha + corner-node
+  markers (text-primary fill, bg stroke at every polygon vertex —
+  the Survey Corner mark in miniature)
 
-Numerics use the `data-value` utility (IBM Plex Mono + tabular-nums).
+Numerics use the `data-value` utility (system monospace + tabular-nums).
 Caps labels use `data-label`.
 
 ## Architecture notes

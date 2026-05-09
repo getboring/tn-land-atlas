@@ -300,7 +300,7 @@ export default function ParcelMap() {
           // Holston copper-bright — formalizes the prior rgba(255,200,120) ad-hoc
           // tone into the brand token. 0.55 alpha so contours read over imagery
           // without drowning the parcel mosaic.
-          'line-color': 'rgba(212, 136, 47, 0.55)', // #D4882F @ 55%
+          'line-color': 'rgba(245, 158, 11, 0.55)', // #FCD34D @ 55%
           'line-width': ['match', ['get', 'level'], 1, 1.4, 0.6],
         },
       })
@@ -334,7 +334,7 @@ export default function ParcelMap() {
         paint: {
           // Hover state lifts the fill via feature-state. Default fill is
           // ~transparent so the imagery stays the visual hero.
-          'fill-color': '#B8732E', // copper — only visible on hover
+          'fill-color': '#F59E0B', // copper — only visible on hover
           'fill-opacity': [
             'case',
             ['boolean', ['feature-state', 'hover'], false],
@@ -353,7 +353,7 @@ export default function ParcelMap() {
         paint: {
           // Default outline — slate at low alpha. Calmer than parchment
           // over aerial imagery; reads like a USGS quadrangle line.
-          'line-color': '#3E5C6B',
+          'line-color': '#94A3B8',
           'line-width': ['interpolate', ['linear'], ['zoom'], 14, 0.8, 18, 1.6],
           'line-opacity': 0.6,
         },
@@ -372,7 +372,7 @@ export default function ParcelMap() {
         minzoom: 13,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': '#D4882F', // copper-bright — warm pre-selection
+          'line-color': '#FCD34D', // copper-bright — warm pre-selection
           'line-width': ['interpolate', ['linear'], ['zoom'], 14, 1.4, 18, 3.0],
           'line-opacity': [
             'case',
@@ -391,7 +391,7 @@ export default function ParcelMap() {
         minzoom: 13,
         filter: ['==', ['get', 'OBJECTID'], NO_SELECTION],
         paint: {
-          'fill-color': '#B8732E', // copper
+          'fill-color': '#F59E0B', // copper
           'fill-opacity': 0.24,
         },
       })
@@ -404,7 +404,7 @@ export default function ParcelMap() {
         filter: ['==', ['get', 'OBJECTID'], NO_SELECTION],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
-          'line-color': '#B8732E', // copper — same as chrome wordmark
+          'line-color': '#F59E0B', // copper — same as chrome wordmark
           'line-width': 3.5,
           'line-opacity': 1,
         },
@@ -424,8 +424,8 @@ export default function ParcelMap() {
         minzoom: 13,
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 14, 2.5, 18, 4.5],
-          'circle-color': '#F5F0E6', // parchment fill
-          'circle-stroke-color': '#1A2B3C', // navy outline
+          'circle-color': '#F8FAFC', // parchment fill
+          'circle-stroke-color': '#334155', // navy outline
           'circle-stroke-width': 1.25,
         },
       })
@@ -825,14 +825,14 @@ export default function ParcelMap() {
               placeholder="Search owner or address…"
               // text-base (16px) on the input — anything smaller triggers
               // iOS Safari's auto-zoom-on-focus, which is awful on a map UI.
-              className="w-full bg-brand-navy/90 backdrop-blur border border-brand-stone/20 text-white text-base sm:text-sm px-3 pr-10 h-10 rounded-lg placeholder:text-brand-stone outline-none focus:border-brand-copper"
+              className="w-full bg-surface/90 backdrop-blur border border-border-default text-white text-base sm:text-sm px-3 pr-10 h-10 rounded-lg placeholder:text-text-tertiary outline-none focus:border-brand"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={clearSearch}
                 aria-label="Clear search"
-                className="absolute right-1 top-1 inline-flex items-center justify-center w-8 h-8 rounded-md text-brand-stone hover:text-white hover:bg-white/10"
+                className="absolute right-1 top-1 inline-flex items-center justify-center w-8 h-8 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -853,7 +853,7 @@ export default function ParcelMap() {
         aria-label="Map actions"
         className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none [&>*]:pointer-events-auto safe-bottom"
       >
-        <div className="flex items-center gap-1 rounded-2xl bg-brand-navy/90 backdrop-blur border border-brand-stone/20 p-1 shadow-lg">
+        <div className="flex items-center gap-1 rounded-2xl bg-surface/90 backdrop-blur border border-border-default p-1 shadow-lg">
           <ActionBarButton
             label={contoursVisible ? 'Hide contour lines' : 'Show contour lines'}
             pressed={contoursVisible}
@@ -897,7 +897,7 @@ export default function ParcelMap() {
           aria-label="Drawing tools"
           className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none [&>*]:pointer-events-auto"
         >
-          <div className="flex items-center gap-1 rounded-2xl bg-brand-navy/95 backdrop-blur border border-brand-stone/20 p-1 shadow-xl">
+          <div className="flex items-center gap-1 rounded-2xl bg-surface/95 backdrop-blur border border-border-default p-1 shadow-xl">
             <ActionBarButton
               label="Lasso parcels"
               pressed={drawMode === 'lasso'}
@@ -949,7 +949,7 @@ export default function ParcelMap() {
         <div
           role="status"
           aria-live="polite"
-          className="absolute bottom-20 right-3 z-10 px-4 py-2 rounded-full bg-brand-navy/95 border border-brand-copper text-xs text-white"
+          className="absolute bottom-20 right-3 z-10 px-4 py-2 rounded-full bg-surface/95 border border-brand text-xs text-white"
         >
           Ruler: <span className="font-bold">{rulerDistance}</span>
         </div>
@@ -971,19 +971,19 @@ export default function ParcelMap() {
               <button
                 onClick={closeSearchResults}
                 aria-label="Close search results"
-                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-brand-stone hover:text-white hover:bg-white/10"
+                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
               >
                 <X className="w-4 h-4" />
               </button>
             </CardHeader>
             <CardContent className="p-0 overflow-y-auto">
               {searchResults.length === 0 && (
-                <div className="px-4 py-6 text-xs text-brand-stone">
+                <div className="px-4 py-6 text-xs text-text-tertiary">
                   Try a different name, street, or parcel ID.
                 </div>
               )}
               {searchResults.length > 0 && (
-                <ul className="divide-y divide-brand-stone/10">
+                <ul className="divide-y divide-border-subtle">
                   {searchResults.slice(0, 200).map((f) => {
                     const addr = f.properties.ADDRESS || `${f.properties.ST_NUM ?? ''} ${f.properties.STREET ?? ''}`.trim()
                     const acres = f.properties.CALC_ACRE != null ? `${f.properties.CALC_ACRE.toFixed(2)} ac` : null
@@ -994,13 +994,13 @@ export default function ParcelMap() {
                           onClick={() => pickResult(f)}
                           className="w-full text-left px-4 py-3 min-h-[64px] hover:bg-white/5 active:bg-white/10 focus:outline-none focus:bg-white/10 transition-colors"
                         >
-                          <div className="text-sm text-brand-parchment font-medium truncate">
+                          <div className="text-sm text-text-primary font-medium truncate">
                             {f.properties.OWNER || 'Unknown owner'}
                           </div>
                           {addr && (
-                            <div className="text-xs text-brand-stone truncate mt-0.5">{addr}</div>
+                            <div className="text-xs text-text-tertiary truncate mt-0.5">{addr}</div>
                           )}
-                          <div className="text-[10px] uppercase tracking-wider text-brand-copper/80 mt-1">
+                          <div className="text-[10px] uppercase tracking-wider text-brand/80 mt-1">
                             {f.properties.COUNTYNAME?.replace(' County', '') ?? '—'}
                             {acres ? ` · ${acres}` : ''}
                             {f.properties.GISLINK ? ` · ${f.properties.GISLINK}` : ''}
@@ -1010,7 +1010,7 @@ export default function ParcelMap() {
                     )
                   })}
                   {searchResults.length > 200 && (
-                    <li className="px-4 py-3 text-[11px] text-brand-stone">
+                    <li className="px-4 py-3 text-[11px] text-text-tertiary">
                       Showing 200 of {searchResults.length} matches — refine your query to narrow.
                     </li>
                   )}
@@ -1029,8 +1029,8 @@ export default function ParcelMap() {
           aria-live="polite"
           className={cn(
             // Sits above the bottom action bar (which is at bottom-3 with h-14).
-            'absolute bottom-24 left-1/2 -translate-x-1/2 z-10 px-4 py-1.5 rounded-full bg-brand-navy/90 border border-brand-stone/20 text-xs pointer-events-none',
-            loading ? 'text-white' : 'text-brand-stone',
+            'absolute bottom-24 left-1/2 -translate-x-1/2 z-10 px-4 py-1.5 rounded-full bg-surface/90 border border-border-default text-xs pointer-events-none',
+            loading ? 'text-white' : 'text-text-tertiary',
           )}
         >
           {loading ? 'Loading…' : `${parcelCount} parcels visible`}
@@ -1048,7 +1048,7 @@ export default function ParcelMap() {
                   <button
                     onClick={sharePermalink}
                     aria-label="Copy share link"
-                    className="inline-flex items-center justify-center w-10 h-10 rounded-md text-brand-stone hover:text-white hover:bg-white/10"
+                    className="inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
                     title={shareCopied ? 'Link copied' : 'Copy link to this parcel'}
                   >
                     {shareCopied ? <Check className="w-4 h-4 text-green-400" /> : <Share2 className="w-4 h-4" />}
@@ -1056,7 +1056,7 @@ export default function ParcelMap() {
                   <button
                     onClick={clearSelection}
                     aria-label="Close property details"
-                    className="inline-flex items-center justify-center w-10 h-10 rounded-md text-brand-stone hover:text-white hover:bg-white/10"
+                    className="inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -1082,14 +1082,14 @@ export default function ParcelMap() {
               <DetailField label="Mail City/ST/ZIP" value={[selectedParcel.properties.MAILCITY, selectedParcel.properties.STATE].filter(Boolean).join(', ') + (selectedParcel.properties.ZIP ? ' ' + selectedParcel.properties.ZIP : '')} mono />
 
               {enrichLoading && (
-                <div className="py-2 text-brand-stone animate-pulse">Loading enriched data…</div>
+                <div className="py-2 text-text-tertiary animate-pulse">Loading enriched data…</div>
               )}
 
               {enriched && (
                 <>
                   {enriched.valuation && (
-                    <div className="pt-2 border-t border-brand-stone/10">
-                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-brand-copper font-medium mb-1">
+                    <div className="pt-2 border-t border-border-subtle">
+                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-brand font-medium mb-1">
                         <TrendingUp className="w-3 h-3" /> Valuation (Supabase)
                       </div>
                       <DetailField label="Land Value" value={fmtMoney(enriched.valuation.land_value)} />
@@ -1100,12 +1100,12 @@ export default function ParcelMap() {
                   )}
 
                   {enriched.buildings.length > 0 && (
-                    <div className="pt-2 border-t border-brand-stone/10">
-                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-brand-copper font-medium mb-1">
+                    <div className="pt-2 border-t border-border-subtle">
+                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-brand font-medium mb-1">
                         <Building2 className="w-3 h-3" /> Buildings ({enriched.buildings.length})
                       </div>
                       {enriched.buildings.map((b, i) => (
-                        <div key={i} className="mb-2 pb-2 border-b border-brand-stone/5 last:border-0">
+                        <div key={i} className="mb-2 pb-2 border-b border-text-tertiary/5 last:border-0">
                           <DetailField label={`Building ${b.building_number}`} value={`${b.sqft_living?.toLocaleString() || '?'} sqft | ${b.year_built || '?'} | ${b.stories || '?'} stories`} />
                           {b.quality && <DetailField label="Quality" value={b.quality} />}
                           {b.condition && <DetailField label="Condition" value={b.condition} />}
@@ -1118,31 +1118,31 @@ export default function ParcelMap() {
                   )}
 
                   {enriched.sales.length > 0 && (
-                    <div className="pt-2 border-t border-brand-stone/10">
-                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-brand-copper font-medium mb-1">
+                    <div className="pt-2 border-t border-border-subtle">
+                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-brand font-medium mb-1">
                         <TrendingUp className="w-3 h-3" /> Sales History ({enriched.sales.length})
                       </div>
                       {enriched.sales.slice(0, 3).map((s, i) => (
                         <div key={i} className="mb-1.5">
-                          <div className="text-brand-parchment">{fmtDate(s.sale_date)} — {fmtMoney(s.price)}</div>
-                          <div className="text-brand-stone text-[10px]">{s.instrument_type} | Book {s.deed_book} Page {s.deed_page} {s.qualification ? `| ${s.qualification}` : ''}</div>
+                          <div className="text-text-primary">{fmtDate(s.sale_date)} — {fmtMoney(s.price)}</div>
+                          <div className="text-text-tertiary text-[10px]">{s.instrument_type} | Book {s.deed_book} Page {s.deed_page} {s.qualification ? `| ${s.qualification}` : ''}</div>
                         </div>
                       ))}
                       {enriched.sales.length > 3 && (
-                        <div className="text-brand-stone text-[10px]">+{enriched.sales.length - 3} more sales</div>
+                        <div className="text-text-tertiary text-[10px]">+{enriched.sales.length - 3} more sales</div>
                       )}
                     </div>
                   )}
 
                   {enriched.entities.length > 0 && (
-                    <div className="pt-2 border-t border-brand-stone/10">
-                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-brand-copper font-medium mb-1">
+                    <div className="pt-2 border-t border-border-subtle">
+                      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-brand font-medium mb-1">
                         <Users className="w-3 h-3" /> Linked Entities ({enriched.entities.length})
                       </div>
                       {enriched.entities.map((e, i) => (
                         <div key={i} className="mb-1">
-                          <div className="text-brand-parchment">{e.name}</div>
-                          <div className="text-brand-stone text-[10px]">{e.entity_type} | {e.status || 'Unknown status'} {e.state ? `| ${e.state}` : ''}</div>
+                          <div className="text-text-primary">{e.name}</div>
+                          <div className="text-text-tertiary text-[10px]">{e.entity_type} | {e.status || 'Unknown status'} {e.state ? `| ${e.state}` : ''}</div>
                         </div>
                       ))}
                     </div>
@@ -1197,14 +1197,14 @@ function FilterSheet({
       }}
       className="m-0 ml-auto mr-auto mb-0 sm:mb-auto sm:mt-auto p-0 bg-transparent backdrop:bg-black/50 backdrop:backdrop-blur-sm w-full sm:w-96 max-h-[85vh] rounded-t-2xl sm:rounded-2xl"
     >
-      <div className="bg-brand-navy/95 border border-brand-stone/20 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-brand-stone/15">
+      <div className="bg-surface/95 border border-border-default rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
           <h2 className="text-sm font-semibold text-white">Filter parcels</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close filters"
-            className="inline-flex items-center justify-center w-10 h-10 rounded-md text-brand-stone hover:text-white hover:bg-white/10"
+            className="inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
           >
             <X className="w-4 h-4" />
           </button>
@@ -1218,7 +1218,7 @@ function FilterSheet({
           <FilterToggle label="Long-held (≥ 20 years)" hint="From last sale date" active={filters.longHeldOnly} onClick={toggle('longHeldOnly')} />
 
           <div className="pt-2">
-            <label className="block text-[11px] uppercase tracking-wider text-brand-stone font-medium mb-1.5">Minimum acres</label>
+            <label className="block text-[11px] uppercase tracking-wider text-text-tertiary font-medium mb-1.5">Minimum acres</label>
             <div className="flex items-center gap-2">
               <input
                 type="number"
@@ -1231,25 +1231,25 @@ function FilterSheet({
                 }}
                 placeholder="any"
                 // text-base (16px) prevents iOS auto-zoom on focus.
-                className="flex-1 bg-white/5 border border-brand-stone/20 text-white text-base sm:text-sm px-3 h-10 rounded-lg outline-none focus:border-brand-copper"
+                className="flex-1 bg-white/5 border border-border-default text-white text-base sm:text-sm px-3 h-10 rounded-lg outline-none focus:border-brand"
               />
-              <span className="text-xs text-brand-stone">ac</span>
+              <span className="text-xs text-text-tertiary">ac</span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-brand-stone/15 bg-brand-navy">
+        <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-border-subtle bg-surface">
           <button
             type="button"
             onClick={reset}
-            className="text-xs text-brand-stone hover:text-white px-3 h-10 rounded-lg"
+            className="text-xs text-text-tertiary hover:text-white px-3 h-10 rounded-lg"
           >
             Reset all
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="text-xs font-medium text-white bg-brand-copper hover:bg-brand-copper/90 px-4 h-10 rounded-lg"
+            className="text-xs font-medium text-white bg-brand hover:bg-brand/90 px-4 h-10 rounded-lg"
           >
             Done
           </button>
@@ -1278,17 +1278,17 @@ function FilterToggle({
       aria-checked={active}
       className={cn(
         'w-full flex items-center justify-between gap-3 px-3 h-12 rounded-lg text-left transition-colors',
-        active ? 'bg-brand-copper/20' : 'hover:bg-white/5',
+        active ? 'bg-brand/20' : 'hover:bg-white/5',
       )}
     >
       <div>
-        <div className="text-sm text-brand-parchment">{label}</div>
-        {hint && <div className="text-[10px] text-brand-stone">{hint}</div>}
+        <div className="text-sm text-text-primary">{label}</div>
+        {hint && <div className="text-[10px] text-text-tertiary">{hint}</div>}
       </div>
       <span
         className={cn(
           'inline-flex items-center w-11 h-6 rounded-full border transition-colors shrink-0',
-          active ? 'bg-brand-copper border-brand-copper' : 'bg-white/5 border-brand-stone/30',
+          active ? 'bg-brand border-brand' : 'bg-white/5 border-border-strong',
         )}
         aria-hidden
       >
@@ -1345,7 +1345,7 @@ function ParcelInsights({
   if (!hasAny) return null
 
   return (
-    <div className="-mx-1 px-1 pb-2 space-y-2 border-b border-brand-stone/10">
+    <div className="-mx-1 px-1 pb-2 space-y-2 border-b border-border-subtle">
       {badges.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {badges.map((b, i) => (
@@ -1356,7 +1356,7 @@ function ParcelInsights({
                 b.tone === 'amber' && 'bg-amber-500/15 text-amber-300 border border-amber-500/30',
                 b.tone === 'blue' && 'bg-sky-500/15 text-sky-300 border border-sky-500/30',
                 b.tone === 'rose' && 'bg-rose-500/15 text-rose-300 border border-rose-500/30',
-                b.tone === 'gray' && 'bg-white/5 text-brand-stone border border-brand-stone/20',
+                b.tone === 'gray' && 'bg-white/5 text-text-tertiary border border-border-default',
               )}
             >
               {b.label}
@@ -1369,8 +1369,8 @@ function ParcelInsights({
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           {stats.map((s, i) => (
             <div key={i}>
-              <div className="text-[10px] uppercase tracking-wider text-brand-stone font-medium">{s.label}</div>
-              <div className="text-brand-parchment font-semibold">{s.value}</div>
+              <div className="text-[10px] uppercase tracking-wider text-text-tertiary font-medium">{s.label}</div>
+              <div className="text-text-primary font-semibold">{s.value}</div>
             </div>
           ))}
         </div>
@@ -1383,7 +1383,7 @@ function ParcelInsights({
               href={appleMapsUrl(c[0], c[1], p.ADDRESS ?? undefined)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-brand-parchment border border-brand-stone/20 hover:bg-white/10"
+              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
             >
               Apple Maps
             </a>
@@ -1393,7 +1393,7 @@ function ParcelInsights({
               href={googleMapsUrl(c[0], c[1])}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-brand-parchment border border-brand-stone/20 hover:bg-white/10"
+              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
             >
               Google Maps
             </a>
@@ -1403,7 +1403,7 @@ function ParcelInsights({
               href={googleStreetViewUrl(c[0], c[1])}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-brand-parchment border border-brand-stone/20 hover:bg-white/10"
+              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
             >
               Street View
             </a>
@@ -1412,7 +1412,7 @@ function ParcelInsights({
             <button
               type="button"
               onClick={() => onSearchOwner(ownerForSearch)}
-              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-brand-copper/20 text-white border border-brand-copper/40 hover:bg-brand-copper/30"
+              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-brand/20 text-white border border-brand/40 hover:bg-brand/30"
             >
               More by {ownerForSearch}
             </button>
@@ -1440,7 +1440,7 @@ function DetailField({
   return (
     <div>
       <div className="data-label">{label}</div>
-      <div className={mono ? 'data-value text-brand-parchment whitespace-pre-line' : 'text-brand-parchment whitespace-pre-line'}>
+      <div className={mono ? 'data-value text-text-primary whitespace-pre-line' : 'text-text-primary whitespace-pre-line'}>
         {String(value)}
       </div>
     </div>
@@ -1473,8 +1473,8 @@ function ActionBarButton({
       className={cn(
         'flex flex-col items-center justify-center gap-0.5 min-w-[64px] h-14 px-3 rounded-xl text-[10px] font-medium uppercase tracking-wider transition-colors',
         pressed
-          ? 'bg-brand-copper text-white'
-          : 'text-brand-parchment hover:bg-white/10 active:bg-white/15',
+          ? 'bg-brand text-white'
+          : 'text-text-primary hover:bg-white/10 active:bg-white/15',
       )}
     >
       {icon}

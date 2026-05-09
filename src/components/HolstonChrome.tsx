@@ -11,7 +11,7 @@ interface HolstonChromeProps {
 
 export function HolstonChrome({ centerSlot, rightSlot, children }: HolstonChromeProps) {
   return (
-    <div className="h-dvh flex flex-col bg-brand-navy">
+    <div className="h-dvh flex flex-col bg-surface">
       {/* ── Top chrome bar ─────────────────────────────── */}
       <header
         role="banner"
@@ -20,8 +20,8 @@ export function HolstonChrome({ centerSlot, rightSlot, children }: HolstonChrome
           relative z-[300] flex-none
           h-12 sm:h-[52px]
           flex items-center px-4 gap-4
-          bg-brand-navy-deep
-          border-b border-brand-copper/20
+          bg-bg
+          border-b border-brand/20
           shadow-[0_1px_3px_rgba(17,29,41,0.4)]
         "
       >
@@ -29,20 +29,20 @@ export function HolstonChrome({ centerSlot, rightSlot, children }: HolstonChrome
         <div className="flex items-center gap-2.5 flex-none select-none">
           <SurveyCornerMark
             size={20}
-            outline="#1A2B3C"
-            fill="#F5F0E6"
-            accent="#B8732E"
+            outline="#334155"
+            fill="#F8FAFC"
+            accent="#F59E0B"
             ariaLabel="Holston Scout"
           />
 
-          <span className="font-display text-brand-parchment text-[15px] tracking-wide leading-none">
+          <span className="font-display text-text-primary text-[15px] tracking-wide leading-none">
             Holston Scout
           </span>
           <span
             className="hidden sm:inline-block w-px h-4 bg-brand-slate/40"
             aria-hidden="true"
           />
-          <span className="hidden sm:inline text-brand-forest text-[10px] font-sans font-semibold uppercase tracking-[0.12em] leading-none">
+          <span className="hidden sm:inline text-text-tertiary text-[10px] font-sans font-semibold uppercase tracking-[0.12em] leading-none">
             by Holston Intel
           </span>
         </div>

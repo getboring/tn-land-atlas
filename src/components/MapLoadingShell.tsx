@@ -27,7 +27,7 @@ export function MapLoadingShell() {
   if (stage === 0) {
     return (
       <div
-        className="h-full w-full bg-brand-navy"
+        className="h-full w-full bg-surface"
         aria-busy="true"
         aria-label="Loading map"
       />
@@ -36,7 +36,7 @@ export function MapLoadingShell() {
 
   return (
     <div
-      className="h-full w-full flex flex-col items-center justify-center bg-brand-navy gap-6"
+      className="h-full w-full flex flex-col items-center justify-center bg-surface gap-6"
       role="status"
       aria-live="polite"
       aria-label="Loading Holston Scout"
@@ -49,17 +49,17 @@ export function MapLoadingShell() {
       >
         <SurveyCornerMark
           size={36}
-          outline="#1A2B3C"
-          fill="#F5F0E6"
-          accent="#B8732E"
+          outline="#334155"
+          fill="#F8FAFC"
+          accent="#F59E0B"
         />
-        <span className="font-display text-brand-copper text-lg tracking-wide">
+        <span className="font-display text-brand text-lg tracking-wide">
           Holston Scout
         </span>
       </div>
 
       {/* Status text — escalates */}
-      <p className="font-mono text-brand-stone/60 text-xs tracking-wide">
+      <p className="font-mono text-text-tertiary/60 text-xs tracking-wide">
         {stage === 1 && 'Loading map…'}
         {stage === 2 && 'Preparing parcel data…'}
         {stage === 3 && 'Slow connection — still loading…'}
@@ -72,10 +72,10 @@ export function MapLoadingShell() {
           onClick={() => window.location.reload()}
           className="
             mt-2 px-5 py-2.5
-            bg-brand-copper text-brand-navy
+            bg-brand text-surface
             font-sans text-sm font-semibold
             rounded-pill
-            hover:bg-brand-copper-bright
+            hover:bg-brand-strong
             active:scale-[0.97]
             transition-all duration-fast ease-out
             min-h-[48px] min-w-[48px]

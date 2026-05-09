@@ -26,8 +26,8 @@ interface SurveyCornerMarkProps {
 export function SurveyCornerMark({
   size = 20,
   outline = 'currentColor',
-  fill = '#F5F0E6',
-  accent = '#B8732E',
+  fill = '#F8FAFC',
+  accent = '#F59E0B',
   className,
   ariaLabel,
 }: SurveyCornerMarkProps) {
@@ -73,18 +73,18 @@ export function SurveyCornerAppIcon({ size = 64 }: SurveyCornerAppIconProps) {
       viewBox="0 0 64 64"
       aria-hidden="true"
     >
-      <rect width="64" height="64" rx="14" fill="#111D29" />
+      <rect width="64" height="64" rx="14" fill="#02040A" />
       <g transform="translate(8, 8) scale(2)">
         <path
           d="M3.5 6.5 L18 4.2 L20.5 13 L16.5 19.5 L5.5 18 Z"
-          fill="#F5F0E6"
-          stroke="#1A2B3C"
+          fill="#F8FAFC"
+          stroke="#334155"
           strokeWidth="1.5"
           strokeLinejoin="round"
           strokeLinecap="round"
         />
-        <circle cx="18" cy="4.2" r="2.4" fill="#B8732E" />
-        <circle cx="18" cy="4.2" r="2.4" fill="none" stroke="#1A2B3C" strokeWidth="0.8" />
+        <circle cx="18" cy="4.2" r="2.4" fill="#F59E0B" />
+        <circle cx="18" cy="4.2" r="2.4" fill="none" stroke="#334155" strokeWidth="0.8" />
       </g>
     </svg>
   )

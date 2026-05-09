@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" preserveAspectRatio="xMidYMid slice">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#111D29"/>
-      <stop offset="100%" stop-color="#1A2B3C"/>
+      <stop offset="0%" stop-color="#02040A"/>
+      <stop offset="100%" stop-color="#0F1729"/>
     </linearGradient>
     <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#D4C9B8" stroke-opacity="0.05" stroke-width="1"/>
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#94A3B8" stroke-opacity="0.05" stroke-width="1"/>
     </pattern>
   </defs>
   <rect width="1200" height="630" fill="url(#bg)"/>
@@ -14,19 +14,19 @@
   <!-- Survey Corner mark, large, left of the wordmark -->
   <g transform="translate(80, 215) scale(8)">
     <path d="M3.5 6.5 L18 4.2 L20.5 13 L16.5 19.5 L5.5 18 Z"
-          fill="#F5F0E6" stroke="#1A2B3C" stroke-width="1.5"
+          fill="none" stroke="#334155" stroke-width="1.5"
           stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="18" cy="4.2" r="2.4" fill="#B8732E"/>
-    <circle cx="18" cy="4.2" r="2.4" fill="none" stroke="#1A2B3C" stroke-width="0.8"/>
+    <circle cx="18" cy="4.2" r="2.4" fill="#F59E0B"/>
+    <circle cx="18" cy="4.2" r="2.4" fill="none" stroke="#02040A" stroke-width="0.8"/>
   </g>
 
-  <!-- Wordmark -->
-  <text x="290" y="290" font-family="Playfair Display, Georgia, serif" font-size="78" font-weight="700" fill="#F5F0E6">Holston Scout</text>
-  <text x="290" y="335" font-family="Source Sans 3, Inter, system-ui, sans-serif" font-size="22" font-weight="600" fill="#2A4A3A" letter-spacing="2">BY HOLSTON INTEL</text>
-  <text x="290" y="395" font-family="Source Sans 3, Inter, system-ui, sans-serif" font-size="26" font-weight="400" fill="#D4C9B8">Scout the ground. Know the build.</text>
-  <text x="290" y="430" font-family="Source Sans 3, Inter, system-ui, sans-serif" font-size="18" font-weight="400" fill="#D4C9B8" opacity="0.7">East Tennessee · Sullivan · Washington · Carter</text>
+  <!-- Wordmark — Inter SemiBold, matches HolstonBuilder -->
+  <text x="290" y="290" font-family="Inter, system-ui, sans-serif" font-size="78" font-weight="700" fill="#F8FAFC">Holston Scout</text>
+  <text x="290" y="335" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="600" fill="#F59E0B" letter-spacing="2">BY HOLSTON INTEL</text>
+  <text x="290" y="395" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="400" fill="#CBD5E1">Scout the ground. Know the build.</text>
+  <text x="290" y="430" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="400" fill="#94A3B8">East Tennessee · Sullivan · Washington · Carter</text>
 
   <!-- Bottom rule + tag -->
-  <line x1="80" y1="540" x2="1120" y2="540" stroke="#D4C9B8" stroke-opacity="0.2" stroke-width="1"/>
-  <text x="80" y="575" font-family="IBM Plex Mono, ui-monospace, monospace" font-size="14" fill="#B8732E" letter-spacing="2">PRE-CONSTRUCTION  ·  PARCEL INTELLIGENCE  ·  TN BUILDERS</text>
+  <line x1="80" y1="540" x2="1120" y2="540" stroke="#334155" stroke-width="1"/>
+  <text x="80" y="575" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#F59E0B" letter-spacing="2">PRE-CONSTRUCTION  ·  PARCEL INTELLIGENCE  ·  TN BUILDERS</text>
 </svg>
