@@ -30,6 +30,10 @@ export interface RecentParcel {
   gislink: string
   /** ISO timestamp. */
   viewedAt: string
+  /** Owner name. Optional so older v1 entries (without it) still parse. */
+  owner?: string
+  /** Street address. */
+  address?: string
 }
 
 interface StorageV1 {
@@ -111,10 +115,18 @@ export function getRecents(): RecentParcel[] {
 }
 
 /** Push a parcel into recents. Dedupes by gislink (moves to front), caps. */
-export function pushRecent(gislink: string): void {
+export function pushRecent(
+  gislink: string,
+  meta?: { owner?: string | null; address?: string | null },
+): void {
   const s = readRaw()
   const filtered = s.recentParcels.filter((p) => p.gislink !== gislink)
-  filtered.unshift({ gislink, viewedAt: new Date().toISOString() })
+  filtered.unshift({
+    gislink,
+    viewedAt: new Date().toISOString(),
+    owner: meta?.owner ?? undefined,
+    address: meta?.address ?? undefined,
+  })
   s.recentParcels = filtered.slice(0, RECENTS_CAP)
   writeRaw(s)
 }

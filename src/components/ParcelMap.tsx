@@ -9,7 +9,7 @@ import type { ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Search, X, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter, Star, Copy, Map as MapIcon, Eye } from 'lucide-react'
-import { toggleSaved, useIsSaved, pushRecent } from '@/lib/storage'
+import { toggleSaved, useIsSaved, pushRecent, useRecents, type RecentParcel } from '@/lib/storage'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
 import type { PropertyData } from '@/lib/supabase-queries'
 import { parsePermalink, updateAddressBar, DEFAULT_MAP_VIEW } from '@/lib/permalink'
@@ -177,6 +177,8 @@ export default function ParcelMap() {
   const drawRef = useRef<TerraDraw | null>(null)
   const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [searchFocused, setSearchFocused] = useState(false)
   // Last-loaded full feature collection from the API. Filters operate on this
   // in-memory snapshot so toggling a filter is instant — no API roundtrip.
   const rawParcelsRef = useRef<GeoJSON.FeatureCollection | null>(null)
@@ -609,7 +611,12 @@ export default function ParcelMap() {
     // Recent-parcels memory. Persists in localStorage so the user can come
     // back tomorrow and find what they were looking at. When auth lands this
     // history migrates to D1 on first login (see src/lib/storage.ts).
-    if (gislink) pushRecent(gislink)
+    if (gislink) {
+      pushRecent(gislink, {
+        owner: f.properties.OWNER ?? null,
+        address: f.properties.ADDRESS ?? null,
+      })
+    }
 
     if (!gislink) {
       setEnriched(null)
@@ -632,10 +639,16 @@ export default function ParcelMap() {
     if (b) m.fitBounds(b, { padding: 120, maxZoom: 17 })
   }, [])
 
-  const doSearch = useCallback(async () => {
-    const q = searchQuery.trim()
+  // Searching is independent of parcel-load loading. The 'Loading…' status
+  // pill at the bottom of the screen tracks parcels-fetched. The inline
+  // spinner inside the search bar tracks search requests specifically — they
+  // can be in flight at the same time without one masking the other.
+  const [searching, setSearching] = useState(false)
+
+  const doSearch = useCallback(async (queryOverride?: string) => {
+    const q = (queryOverride ?? searchQuery).trim()
     if (!q || !map.current) return
-    setLoading(true)
+    setSearching(true)
     try {
       const data = await searchParcels(q, COUNTY_ALL)
       rawParcelsRef.current = data as GeoJSON.FeatureCollection
@@ -653,7 +666,7 @@ export default function ParcelMap() {
       console.error('[search] failed', e)
       setSearchResults([])
     } finally {
-      setLoading(false)
+      setSearching(false)
     }
   }, [searchQuery])
 
@@ -725,6 +738,26 @@ export default function ParcelMap() {
     loadRef.current = loadParcelsForViewport
     selectRef.current = selectParcel
   }, [loadParcelsForViewport, selectParcel])
+
+  // Global keyboard shortcut: '/' or Cmd-K / Ctrl-K focuses the search input.
+  // Skipped when the user is already typing into another input/textarea so
+  // we don't hijack form fields. Mirrors GitHub / Linear / Notion convention.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      const inField =
+        t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      const isSlash = e.key === '/' && !inField
+      const isCmdK = (e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)
+      if (isSlash || isCmdK) {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // Re-apply client-side filters when the user toggles them. Operates on the
   // last-loaded raw feature collection — instant, no API roundtrip.
@@ -820,15 +853,29 @@ export default function ParcelMap() {
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <div className="relative flex-1 min-w-0">
             <input
-              type="search"
-              aria-label="Search owner or address"
+              ref={searchInputRef}
+              // Use type=text not type=search to avoid the native browser X
+              // overlapping our custom Clear button.
+              type="text"
+              aria-label="Search owner, address, or parcel ID"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') doSearch()
-                if (e.key === 'Escape') clearSearch()
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => {
+                // Defer so a click on a typeahead item lands before we hide it.
+                setTimeout(() => setSearchFocused(false), 120)
               }}
-              placeholder="Search owner or address…"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setSearchFocused(false)
+                  doSearch()
+                }
+                if (e.key === 'Escape') {
+                  clearSearch()
+                  searchInputRef.current?.blur()
+                }
+              }}
+              placeholder='Owner, address, or parcel ID — try "Smith" or 090046M H 01300'
               // text-base (16px) on the input — anything smaller triggers
               // iOS Safari's auto-zoom-on-focus, which is awful on a map UI.
               className="w-full bg-surface/90 backdrop-blur border border-border-default text-white text-base sm:text-sm px-3 pr-10 h-10 rounded-lg placeholder:text-text-tertiary outline-none focus:border-brand"
@@ -843,9 +890,34 @@ export default function ParcelMap() {
                 <X className="w-4 h-4" />
               </button>
             )}
+            <SearchSuggestions
+              visible={searchFocused && searchResults === null}
+              query={searchQuery}
+              onPick={(gislink, owner, address) => {
+                setSearchFocused(false)
+                // Use the most distinctive existing token for the search
+                // request — owner is more likely to disambiguate than address.
+                const q = owner || address || gislink
+                setSearchQuery(q)
+                doSearch(q)
+              }}
+            />
           </div>
-          <Button size="default" onClick={doSearch} aria-label="Search" className="h-10 w-10 px-0">
-            <Search className="w-4 h-4" />
+          <Button
+            size="default"
+            onClick={() => doSearch()}
+            aria-label="Search"
+            className="h-10 w-10 px-0"
+            disabled={searching}
+          >
+            {searching ? (
+              <span
+                aria-hidden="true"
+                className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+              />
+            ) : (
+              <Search className="w-4 h-4" />
+            )}
           </Button>
         </div>
       </div>
@@ -1073,7 +1145,7 @@ export default function ParcelMap() {
             <CardContent className="space-y-3 text-xs">
               <ParcelActions
                 f={selectedParcel}
-                onSearchOwner={(owner) => { setSearchQuery(owner); doSearch() }}
+                onSearchOwner={(owner) => { setSearchQuery(owner); doSearch(owner) }}
               />
               <ParcelInsights f={selectedParcel} />
 
@@ -1466,6 +1538,75 @@ function ParcelActions({
           <Users className="w-3.5 h-3.5" /> More by {ownerForSearch}
         </button>
       )}
+    </div>
+  )
+}
+
+// SearchSuggestions — type-ahead dropdown sourced from the user's recently
+// viewed parcels. Substring match on owner / address / gislink. Caps at 5.
+// When `query` is empty and the input is focused, shows the most recent 5
+// instead so the dropdown surfaces useful state on a fresh focus.
+function SearchSuggestions({
+  visible,
+  query,
+  onPick,
+}: {
+  visible: boolean
+  query: string
+  onPick: (gislink: string, owner: string, address: string) => void
+}) {
+  const recents = useRecents()
+  if (!visible || recents.length === 0) return null
+  const q = query.trim().toLowerCase()
+  const matches: RecentParcel[] = q
+    ? recents
+        .filter((r) => {
+          const hay = `${r.owner ?? ''} ${r.address ?? ''} ${r.gislink}`.toLowerCase()
+          return hay.includes(q)
+        })
+        .slice(0, 5)
+    : recents.slice(0, 5)
+  if (matches.length === 0) return null
+
+  return (
+    <div
+      role="listbox"
+      aria-label="Recent parcels"
+      className="absolute top-11 left-0 right-0 z-20 rounded-lg bg-surface/95 backdrop-blur border border-border-default shadow-xl overflow-hidden"
+    >
+      <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-text-tertiary">
+        {q ? 'Recent matches' : 'Recently viewed'}
+      </div>
+      <ul className="divide-y divide-border-subtle">
+        {matches.map((r) => {
+          const owner = r.owner ?? ''
+          const addr = r.address ?? ''
+          return (
+            <li key={r.gislink}>
+              <button
+                type="button"
+                role="option"
+                aria-selected="false"
+                // onMouseDown so it fires before the input's blur handler hides us.
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  onPick(r.gislink, owner, addr)
+                }}
+                className="w-full text-left px-3 py-2 min-h-[48px] hover:bg-white/5 active:bg-white/10 focus:outline-none focus:bg-white/10 transition-colors"
+              >
+                <div className="text-sm text-text-primary font-medium truncate">
+                  {owner || addr || r.gislink}
+                </div>
+                {(addr || r.gislink) && (
+                  <div className="text-[11px] text-text-tertiary truncate mt-0.5">
+                    {addr ? `${addr} · ` : ''}{r.gislink}
+                  </div>
+                )}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }
