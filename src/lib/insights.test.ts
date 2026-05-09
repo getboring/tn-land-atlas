@@ -12,6 +12,7 @@ import {
   firstNumberToken,
   outOfState,
   entityKind,
+  ownerSearchTerm,
   centroid,
   haversineMeters,
   formatYearsHeld,
@@ -422,6 +423,35 @@ describe('passesFilters', () => {
     const f: ParcelFilterFlags = { ...allOff, entityOnly: true, outOfStateOnly: true }
     expect(passesFilters({ ...baseProps, OWNER: 'SMITH LLC', STATE: 'TN' }, f, NOW_FILTER)).toBe(false)
     expect(passesFilters({ ...baseProps, OWNER: 'SMITH LLC', STATE: 'GA' }, f, NOW_FILTER)).toBe(true)
+  })
+})
+
+describe('ownerSearchTerm', () => {
+  it('strips trailing legal suffix from entity names', () => {
+    expect(ownerSearchTerm('JOHNSON CITY MEDICAL CENTER LLC')).toBe('JOHNSON CITY MEDICAL CENTER')
+    expect(ownerSearchTerm('SUMMERS HARDWARE COMPANY INC')).toBe('SUMMERS HARDWARE COMPANY')
+    expect(ownerSearchTerm('GOUGE LAND PARTNERSHIP LP')).toBe('GOUGE LAND PARTNERSHIP')
+    expect(ownerSearchTerm('BRISTOL PRESERVATION L.L.C.')).toBe('BRISTOL PRESERVATION')
+    expect(ownerSearchTerm('SMITH CORPORATION')).toBe('SMITH')
+    expect(ownerSearchTerm('JOHNSON FOUNDATION')).toBe('JOHNSON')
+  })
+  it('returns surname for individuals', () => {
+    expect(ownerSearchTerm('SMITH JOHN')).toBe('SMITH')
+    expect(ownerSearchTerm('SMITH JOHN & MARY')).toBe('SMITH')
+    expect(ownerSearchTerm('SMITH, JOHN')).toBe('SMITH')
+  })
+  it('handles empty / nullish gracefully', () => {
+    expect(ownerSearchTerm('')).toBe('')
+    expect(ownerSearchTerm(null)).toBe('')
+    expect(ownerSearchTerm(undefined)).toBe('')
+    expect(ownerSearchTerm('   ')).toBe('')
+  })
+  it('falls back to full string if stripping eats the entire name', () => {
+    expect(ownerSearchTerm('LLC')).toBe('LLC')
+  })
+  it('keeps the distinctive name when entity tokens appear mid-name', () => {
+    // "TRUST" appears mid-name; trailing-only suffix strip leaves the rest.
+    expect(ownerSearchTerm('SMITH FAMILY TRUST')).toBe('SMITH FAMILY')
   })
 })
 

@@ -185,6 +185,42 @@ export function entityKind(owner: string | null | undefined): EntityKind | null 
 }
 
 // ----------------------------------------------------------------------------
+// ownerSearchTerm — the right query string to find OTHER parcels owned by
+// the same person/entity. The naive approach (first whitespace token) breaks
+// horribly for entities: "JOHNSON CITY MEDICAL CENTER LLC" reduces to
+// "JOHNSON" which matches every Johnson on the tax roll.
+//
+// Strategy:
+//   - Entity: keep the distinctive name, drop the trailing legal suffix.
+//     e.g. "JOHNSON CITY MEDICAL CENTER LLC" -> "JOHNSON CITY MEDICAL CENTER"
+//   - Individual: surname (first token before "&" or ","). ArcGIS usually
+//     stores "LASTNAME FIRSTNAME" or "LASTNAME, FIRSTNAME".
+//   - Joint owners ("SMITH JOHN & MARY"): drop everything after "&".
+//
+// Return '' (not null) for empty owners so callers can use truthy checks.
+// ----------------------------------------------------------------------------
+const TRAILING_SUFFIX_RE =
+  /[\s,]*\b(LLC|L\.L\.C\.?|INC(?:ORPORATED)?|LP|L\.P\.?|LIMITED PARTNERSHIP|CORP(?:ORATION)?|TRUST(?:EE)?|FOUNDATION|FOUND\.?)\.?\s*$/i
+
+export function ownerSearchTerm(owner: string | null | undefined): string {
+  if (!owner) return ''
+  const trimmed = owner.trim()
+  if (!trimmed) return ''
+
+  // Entity: strip the trailing legal suffix and keep the distinctive name.
+  if (entityKind(trimmed)) {
+    const stripped = trimmed.replace(TRAILING_SUFFIX_RE, '').trim()
+    // If stripping ate the whole string (owner was just "LLC"), fall back
+    // to the original.
+    return stripped.length > 0 ? stripped : trimmed
+  }
+
+  // Individual: surname only. Cut at first "&" (joint) or "," (legal-form).
+  const cut = trimmed.replace(/[,&].*$/, '').trim()
+  return cut.split(/\s+/)[0] ?? ''
+}
+
+// ----------------------------------------------------------------------------
 // Polygon centroid using the shoelace formula. For arbitrary closed rings;
 // degenerates gracefully (returns null) when area is zero or the input is
 // malformed.

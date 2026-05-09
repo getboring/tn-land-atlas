@@ -8,7 +8,8 @@ import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey, que
 import type { ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Search, X, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter } from 'lucide-react'
+import { Search, X, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter, Star, Copy, Map as MapIcon, Eye } from 'lucide-react'
+import { toggleSaved, useIsSaved, pushRecent } from '@/lib/storage'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
 import type { PropertyData } from '@/lib/supabase-queries'
 import { parsePermalink, updateAddressBar, DEFAULT_MAP_VIEW } from '@/lib/permalink'
@@ -26,6 +27,7 @@ import {
   occupancy,
   outOfState,
   entityKind,
+  ownerSearchTerm,
   centroid,
   formatYearsHeld,
   appleMapsUrl,
@@ -604,6 +606,11 @@ export default function ParcelMap() {
       parcelKey: gislink ?? null,
     })
 
+    // Recent-parcels memory. Persists in localStorage so the user can come
+    // back tomorrow and find what they were looking at. When auth lands this
+    // history migrates to D1 on first login (see src/lib/storage.ts).
+    if (gislink) pushRecent(gislink)
+
     if (!gislink) {
       setEnriched(null)
       return
@@ -1044,6 +1051,7 @@ export default function ParcelMap() {
               <div className="flex items-start justify-between gap-1">
                 <CardTitle className="text-sm">Property Details</CardTitle>
                 <div className="flex items-center -mr-2 -mt-2">
+                  <SaveButton gislink={selectedParcel.properties.GISLINK} />
                   <button
                     onClick={sharePermalink}
                     aria-label="Copy share link"
@@ -1063,7 +1071,11 @@ export default function ParcelMap() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3 text-xs">
-              <ParcelInsights f={selectedParcel} onSearchOwner={(owner) => { setSearchQuery(owner); doSearch() }} />
+              <ParcelActions
+                f={selectedParcel}
+                onSearchOwner={(owner) => { setSearchQuery(owner); doSearch() }}
+              />
+              <ParcelInsights f={selectedParcel} />
 
               {/* Hidden when empty — fields the county doesn't populate
                   (PROPTYPE, SALELABEL, ST_NUM/STREET) drop entirely instead
@@ -1302,17 +1314,11 @@ function FilterToggle({
   )
 }
 
-// ParcelInsights renders the computed indicators (badges + math) and the
-// quick actions (Maps / Street View / More by owner). Every line is gated
-// on whether the underlying value computes — nothing here ever shows when
-// the data isn't there.
-function ParcelInsights({
-  f,
-  onSearchOwner,
-}: {
-  f: ParcelFeature
-  onSearchOwner: (owner: string) => void
-}) {
+// ParcelInsights renders the computed indicators (badges + math). Quick
+// actions (Maps / Street View / More by owner / Copy address) live in the
+// sibling ParcelActions row above. Every line here is gated on whether the
+// underlying value computes — nothing shows when the data isn't there.
+function ParcelInsights({ f }: { f: ParcelFeature }) {
   const p = f.properties
   const acres = p.CALC_ACRE
   const appraisal = p.APPRAISAL
@@ -1325,8 +1331,6 @@ function ParcelInsights({
   const oos = outOfState(p.STATE)
   const ent = entityKind(p.OWNER)
   const ratio = saleToAppraisalRatio(price, appraisal)
-  const c = centroid(f.geometry)
-  const ownerForSearch = (p.OWNER ?? '').split(/\s+/).slice(0, 1).join('').trim()
 
   const badges: Array<{ label: string; tone: 'amber' | 'blue' | 'rose' | 'gray' }> = []
   if (occ === 'absentee') badges.push({ label: 'Absentee', tone: 'amber' })
@@ -1340,7 +1344,7 @@ function ParcelInsights({
   if (ppa != null) stats.push({ label: '$/ac', value: formatPricePerAcre(ppa) ?? '' })
   if (ratio != null) stats.push({ label: 'Sold / appraised', value: formatRatioPercent(ratio) ?? '' })
 
-  const hasAny = badges.length > 0 || stats.length > 0 || c != null
+  const hasAny = badges.length > 0 || stats.length > 0
   if (!hasAny) return null
 
   return (
@@ -1375,50 +1379,113 @@ function ParcelInsights({
         </div>
       )}
 
-      {(c != null || ownerForSearch) && (
-        <div className="flex flex-wrap gap-1.5 pt-1">
-          {c && (
-            <a
-              href={appleMapsUrl(c[0], c[1], p.ADDRESS ?? undefined)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
-            >
-              Apple Maps
-            </a>
-          )}
-          {c && (
-            <a
-              href={googleMapsUrl(c[0], c[1])}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
-            >
-              Google Maps
-            </a>
-          )}
-          {c && (
-            <a
-              href={googleStreetViewUrl(c[0], c[1])}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
-            >
-              Street View
-            </a>
-          )}
-          {ownerForSearch && (
-            <button
-              type="button"
-              onClick={() => onSearchOwner(ownerForSearch)}
-              className="inline-flex items-center justify-center h-10 px-3 rounded-lg text-[11px] font-medium bg-brand/20 text-white border border-brand/40 hover:bg-brand/30"
-            >
-              More by {ownerForSearch}
-            </button>
-          )}
-        </div>
+    </div>
+  )
+}
+
+// ParcelActions — quick-action chip row at the top of the property panel.
+// Most-used actions surface here so the user doesn't have to scroll past the
+// field list to find them: Maps, Street View, Copy address, More-by-owner.
+function ParcelActions({
+  f,
+  onSearchOwner,
+}: {
+  f: ParcelFeature
+  onSearchOwner: (owner: string) => void
+}) {
+  const p = f.properties
+  const c = centroid(f.geometry)
+  const ownerForSearch = ownerSearchTerm(p.OWNER)
+  const [copiedAddr, setCopiedAddr] = useState(false)
+
+  const copyAddress = useCallback(() => {
+    const addr = [p.ADDRESS, p.MAILCITY, p.STATE, p.ZIP].filter(Boolean).join(', ')
+    if (!addr || !navigator.clipboard) return
+    navigator.clipboard.writeText(addr).then(
+      () => {
+        setCopiedAddr(true)
+        setTimeout(() => setCopiedAddr(false), 1500)
+      },
+      // Permission denied / insecure context. Silent — the user will retry.
+      () => {},
+    )
+  }, [p.ADDRESS, p.MAILCITY, p.STATE, p.ZIP])
+
+  // Nothing to show? Don't render the row at all (better than an empty band).
+  if (!c && !ownerForSearch && !p.ADDRESS) return null
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {c && (
+        <a
+          href={googleMapsUrl(c[0], c[1])}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
+        >
+          <MapIcon className="w-3.5 h-3.5" /> Maps
+        </a>
+      )}
+      {c && (
+        <a
+          href={googleStreetViewUrl(c[0], c[1])}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
+        >
+          <Eye className="w-3.5 h-3.5" /> Street View
+        </a>
+      )}
+      {c && (
+        <a
+          href={appleMapsUrl(c[0], c[1], p.ADDRESS ?? undefined)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
+        >
+          Apple
+        </a>
+      )}
+      {p.ADDRESS && (
+        <button
+          type="button"
+          onClick={copyAddress}
+          aria-label={copiedAddr ? 'Address copied' : 'Copy address to clipboard'}
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
+        >
+          {copiedAddr ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+          {copiedAddr ? 'Copied' : 'Copy address'}
+        </button>
+      )}
+      {ownerForSearch && (
+        <button
+          type="button"
+          onClick={() => onSearchOwner(ownerForSearch)}
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[11px] font-medium bg-brand/20 text-white border border-brand/40 hover:bg-brand/30"
+        >
+          <Users className="w-3.5 h-3.5" /> More by {ownerForSearch}
+        </button>
       )}
     </div>
+  )
+}
+
+// SaveButton — toggles a parcel's saved state in localStorage. Same UI/UX
+// pre- and post-auth: when auth lands, the underlying storage layer swaps
+// to D1 without any change here.
+function SaveButton({ gislink }: { gislink: string | null | undefined }) {
+  const saved = useIsSaved(gislink)
+  if (!gislink) return null
+  return (
+    <button
+      onClick={() => toggleSaved(gislink)}
+      aria-label={saved ? 'Unsave parcel' : 'Save parcel'}
+      aria-pressed={saved}
+      title={saved ? 'Saved (click to unsave)' : 'Save this parcel'}
+      className="inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
+    >
+      <Star className={cn('w-4 h-4 transition-colors', saved ? 'fill-brand text-brand' : '')} />
+    </button>
   )
 }
 
