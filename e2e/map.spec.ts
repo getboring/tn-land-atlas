@@ -214,14 +214,14 @@ test.describe('Holston Scout', () => {
   })
 
   test('search input exists and accepts text', async ({ page }) => {
-    const input = page.getByPlaceholder('Search owner or address…')
+    const input = page.getByRole('textbox', { name: /Search owner/i })
     await expect(input).toBeVisible()
     await input.fill('123 main')
     await expect(input).toHaveValue('123 main')
   })
 
   test('search shows a results list and picking one opens detail', async ({ page }) => {
-    const input = page.getByPlaceholder('Search owner or address…')
+    const input = page.getByRole('textbox', { name: /Search owner/i })
     await input.fill('smith')
     const searchResp = page.waitForResponse(
       (r) => r.url().includes('/api/search') && r.status() === 200,
@@ -241,17 +241,18 @@ test.describe('Holston Scout', () => {
   })
 
   test('clear-search button empties the input and closes results', async ({ page }) => {
-    const input = page.getByPlaceholder('Search owner or address…')
+    const input = page.getByRole('textbox', { name: /Search owner/i })
     await input.fill('hello')
     await page.getByRole('button', { name: 'Clear search' }).click()
     await expect(input).toHaveValue('')
   })
 
-  test('bottom action bar exposes Topo, Tools, Locate, Reset', async ({ page }) => {
-    await expect(page.getByRole('button', { name: /contour lines/i })).toBeVisible()
+  test('bottom action bar exposes Layers, Tools, Filter, Locate, Home', async ({ page }) => {
+    await expect(page.getByRole('button', { name: /Map layers/i })).toBeVisible()
     await expect(page.getByRole('button', { name: /Drawing tools/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Filter(?:\s·\s\d+)?$/ })).toBeVisible()
     await expect(page.getByRole('button', { name: /Locate me/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Recenter to overview/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Home view/i })).toBeVisible()
   })
 
   test('Export control is present in the bottom-right cluster', async ({ page }) => {
@@ -282,12 +283,15 @@ test.describe('Holston Scout', () => {
     await expect(page.getByRole('button', { name: /Measure distance/i })).toBeVisible()
   })
 
-  test('topo contours toggle works', async ({ page }) => {
-    const toggle = page.getByRole('button', { name: /contour lines/i })
+  test('contour-lines toggle works (lives inside the Layers popover now)', async ({ page }) => {
+    // Topo was promoted to a basemap-and-overlays popover. Open it first,
+    // then flip the contour-lines switch (role=switch).
+    await page.getByRole('button', { name: /Map layers/i }).click()
+    const toggle = page.getByRole('switch', { name: /Contour lines/i })
     await expect(toggle).toBeVisible()
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await expect(toggle).toHaveAttribute('aria-checked', 'false')
     await toggle.click()
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(toggle).toHaveAttribute('aria-checked', 'true')
     const vis = await page.evaluate(() => {
       const m = (window as unknown as { __map__?: { getLayoutProperty: (id: string, p: string) => string } }).__map__
       return m?.getLayoutProperty('contour-lines', 'visibility')
@@ -316,7 +320,7 @@ test.describe('Holston Scout', () => {
 
   test('responsive layout adapts to viewport', async ({ page }) => {
     await expect(page.locator('[aria-label="Holston Scout navigation"]')).toBeVisible()
-    await expect(page.getByPlaceholder('Search owner or address…')).toBeVisible()
+    await expect(page.getByRole('textbox', { name: /Search owner/i })).toBeVisible()
   })
 
   test('map view is reflected in the URL after panning', async ({ page }) => {
@@ -331,13 +335,13 @@ test.describe('Holston Scout', () => {
     expect(Number(params.get('lng'))).toBeCloseTo(-82.5, 1)
   })
 
-  test('recenter button resets view', async ({ page }) => {
+  test('home button resets view', async ({ page }) => {
     await page.evaluate(() => {
       const m = (window as unknown as { __map__?: { jumpTo: (o: object) => void } }).__map__
       if (m) m.jumpTo({ center: [-82.3534, 36.3134], zoom: 16 })
     })
-    const recenter = page.locator('button').filter({ has: page.locator('svg.lucide-crosshair') })
-    await recenter.click()
+    const home = page.getByRole('button', { name: /Home view/i })
+    await home.click()
     await expect
       .poll(async () =>
         await page.evaluate(() => {
