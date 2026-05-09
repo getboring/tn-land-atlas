@@ -8,7 +8,7 @@ import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey, que
 import type { ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Search, X, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter, Star, Copy, Map as MapIcon, Eye } from 'lucide-react'
+import { Search, X, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter, Star, Copy, Map as MapIcon, Eye, Clock } from 'lucide-react'
 import { toggleSaved, useIsSaved, pushRecent, useRecents, type RecentParcel } from '@/lib/storage'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
 import type { PropertyData } from '@/lib/supabase-queries'
@@ -922,6 +922,23 @@ export default function ParcelMap() {
         </div>
       </div>
 
+      {/* Recent parcels pill — bottom-left, above the MapLibre ScaleControl.
+          Pre-auth come-back loop: localStorage holds the last 15 viewed
+          parcels. Day 3 of polish-pass-1. */}
+      <RecentParcelsPill
+        onPick={async (gislink) => {
+          if (!map.current) return
+          try {
+            const f = await getParcelByKey(gislink)
+            if (!map.current) return
+            flyToFeature(f, map.current)
+            selectParcel(f, map.current)
+          } catch (e) {
+            console.error('[recents] parcel lookup failed', e)
+          }
+        }}
+      />
+
       {/* Bottom action bar — the menu system. Universal across viewports.
           Native HTML semantics (<nav role="toolbar">), tap targets >= 48px,
           backdrop-blur frosted look (iOS / macOS / Material 3 convention),
@@ -1537,6 +1554,94 @@ function ParcelActions({
         >
           <Users className="w-3.5 h-3.5" /> More by {ownerForSearch}
         </button>
+      )}
+    </div>
+  )
+}
+
+// RecentParcelsPill — bottom-left pill that opens a list of the user's
+// recently viewed parcels. Sourced from localStorage so it persists across
+// reloads and tabs. Pre-auth stickiness; when auth lands, this graduates to
+// a real "My Parcels" page using the same RecentParcel type from storage.ts.
+function RecentParcelsPill({ onPick }: { onPick: (gislink: string) => void }) {
+  const recents = useRecents()
+  const [open, setOpen] = useState(false)
+
+  // Close on outside click. The pill itself stops propagation so its own
+  // clicks don't immediately re-close.
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null
+      if (el?.closest('[data-recents-pill]')) return
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  if (recents.length === 0) return null
+
+  return (
+    <div
+      data-recents-pill
+      className="absolute top-14 left-3 z-20 pointer-events-none [&>*]:pointer-events-auto"
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label={`Recent parcels (${recents.length})`}
+        className={cn(
+          'inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[11px] font-medium uppercase tracking-wider border transition-colors',
+          open
+            ? 'bg-brand text-white border-brand'
+            : 'bg-surface/90 backdrop-blur text-text-primary border-border-default hover:bg-white/10',
+        )}
+      >
+        <Clock className="w-3.5 h-3.5" />
+        Recent · {recents.length}
+      </button>
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Recent parcels"
+          className="mt-2 w-72 max-h-[60vh] overflow-y-auto rounded-xl bg-surface/95 backdrop-blur border border-border-default shadow-xl brand-scroll"
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle">
+            <div className="text-[11px] uppercase tracking-wider text-text-tertiary">
+              Recently viewed
+            </div>
+            <button
+              onClick={() => setOpen(false)}
+              aria-label="Close recent list"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <ul className="divide-y divide-border-subtle">
+            {recents.map((r) => (
+              <li key={r.gislink}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false)
+                    onPick(r.gislink)
+                  }}
+                  className="w-full text-left px-3 py-2 min-h-[48px] hover:bg-white/5 active:bg-white/10 focus:outline-none focus:bg-white/10 transition-colors"
+                >
+                  <div className="text-sm text-text-primary font-medium truncate">
+                    {r.owner || r.address || r.gislink}
+                  </div>
+                  <div className="text-[11px] text-text-tertiary truncate mt-0.5">
+                    {r.address ? `${r.address} · ` : ''}{r.gislink}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   )
