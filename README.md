@@ -1,10 +1,19 @@
-# TN Land Atlas
+# Holston Scout
 
-Parcel mapping for **Sullivan, Washington, and Carter** counties in East Tennessee.
-Live aerial imagery, parcel polygons, owner / address / parcel-ID search,
-elevation contours, lasso + ruler tools, computed insight badges, server-side
-enriched property data (buildings, valuations, sales history, linked entities),
-URL permalinks, PDF/PNG export.
+**Pre-construction parcel intelligence for East Tennessee builders.**
+*Scout the ground. Know the build.*
+
+A parcel-first map product for **Sullivan, Washington, and Carter** counties.
+Live aerial imagery, slate-on-imagery parcel boundaries, copper hover and
+selection states with corner-node markers (the Survey Corner brand mark in
+miniature), owner / address / parcel-ID search, elevation contours, lasso
++ ruler tools, computed insight badges, server-side enriched property data
+(buildings, valuations, sales history, linked entities), URL permalinks,
+and PDF/PNG export.
+
+Repo and Cloudflare Pages project keep the legacy `tn-land-atlas` name.
+The user-facing brand is **Holston Scout**, a vertical of the Holston Intel
+platform.
 
 Live: <https://tn-land-atlas.pages.dev>
 
@@ -13,11 +22,12 @@ Live: <https://tn-land-atlas.pages.dev>
 - Vite 8 + React 19 + TypeScript strict (project refs for app / node / functions)
 - MapLibre GL JS 5
 - maplibre-contour, terra-draw, @watergis/maplibre-gl-export
-- Tailwind CSS v4 + shadcn-style primitives (`Button`, `Card`)
+- Tailwind CSS v4 with `@theme` tokens (Holston palette + Playfair Display / Source Sans 3 / IBM Plex Mono)
 - ArcGIS REST (Johnson City) for live parcel polygons
 - Supabase REST for enriched data — server-side only via Pages Functions
 - Cloudflare Pages + Pages Functions
-- Playwright for E2E (~48 tests x 3 viewports), Vitest for unit tests of `src/lib/insights.ts` (55 cases)
+- Playwright for E2E (~50+ tests x 3 viewports), Vitest for unit tests across
+  `src/lib/{insights,permalink,lazyRetry}.ts` (60+ cases)
 
 ## Quick start
 
@@ -180,20 +190,28 @@ public/
   og-image.svg          1200x630 share preview
 
 src/
-  App.tsx               <ErrorBoundary><Suspense><ParcelMap /></...
+  App.tsx               <HolstonChrome><ErrorBoundary><Suspense><ParcelMap />
   main.tsx              React root, imports index.css
-  index.css             Tailwind tokens, MapLibre + reduced-motion + safe-area helpers
+  index.css             @theme tokens (Holston palette + Playfair / Source Sans 3 /
+                        IBM Plex Mono), MapLibre overrides, instrument-grade controls,
+                        backdrop-filter @supports fallback, prefers-reduced-motion,
+                        data-value / data-label utilities
   components/
+    HolstonChrome.tsx   top chrome bar (48-52px) — wordmark + Survey Corner mark
+    SurveyCornerMark.tsx geometric brand mark; three lockups
     ParcelMap.tsx       main map, search, detail sidebar, bottom action bar,
-                        Tools popover, FilterSheet, ParcelInsights, drawing tools
-    ErrorBoundary.tsx   recovery UI on render error
-    ui/{button,card}.tsx  shadcn-style primitives
+                        Tools popover, FilterSheet, ParcelInsights, drawing tools,
+                        corner-node markers on selected parcels
+    MapLoadingShell.tsx graduated 4-stage loading shell with Survey Corner pulse
+    MapErrorFallback.tsx branded error UI (used by react-error-boundary)
+    ui/{button,card}.tsx shadcn-style primitives
   lib/
     api.ts              typed fetch wrappers for /api/*
     arcgis.ts           ParcelProperties / ParcelFeature / ParcelCollection types
     draw.ts             Terra Draw lifecycle helpers + haversine ruler
     insights.ts         pure indicator functions (price/ac, holding-yrs, entity, ...)
-    insights.test.ts    55 vitest cases
+    insights.test.ts    55+ vitest cases
+    lazyRetry.ts        dynamic-import wrapper with one-shot reload (stale-chunk recovery)
     permalink.ts        URL <-> { view, parcelKey } (replaceState only)
     supabase-queries.ts enriched-data type definitions (no runtime client)
     utils.ts            cn(), fmtMoney() (handles 0), fmtDate() (handles NaN)
@@ -206,7 +224,7 @@ functions/api/
   search.ts             POST -> ArcGIS LIKE on OWNER / ADDRESS / GISLINK
   property.ts           POST -> Supabase parallel reads, UUID-validated entity joins
 
-e2e/map.spec.ts         48 tests x 3 viewports (chromium-desktop/-tablet/-mobile)
+e2e/map.spec.ts         ~50+ tests x 3 viewports (chromium-desktop/-tablet/-mobile)
 
 CLAUDE.md / AGENTS.md   project conventions and rules for AI agents
 ```

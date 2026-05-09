@@ -8,6 +8,9 @@ export default defineConfig({
     alias: { '@': resolve(__dirname, 'src') },
   },
   test: {
+    // jsdom — permalink + lazyRetry tests use window / sessionStorage / history.
+    // Insights tests are pure functions and run fine in jsdom too.
+    environment: 'jsdom',
     include: ['src/**/*.test.ts'],
     exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
   },
