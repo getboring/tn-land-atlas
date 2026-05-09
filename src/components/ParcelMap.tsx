@@ -8,7 +8,7 @@ import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey, que
 import type { ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Search, X, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter, Star, Copy, Map as MapIcon, Eye, Clock } from 'lucide-react'
+import { Search, X, Crosshair, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter, Star, Copy, Map as MapIcon, Eye, Clock, Layers } from 'lucide-react'
 import { toggleSaved, useIsSaved, pushRecent, useRecents, type RecentParcel } from '@/lib/storage'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
 import type { PropertyData } from '@/lib/supabase-queries'
@@ -37,6 +37,17 @@ import {
 } from '@/lib/insights'
 
 const NO_SELECTION: number = -1
+
+type Basemap = 'satellite' | 'streets' | 'topo' | 'hybrid'
+
+const BASEMAP_LAYERS: Record<Basemap, string[]> = {
+  satellite: ['esri-imagery'],
+  streets: ['osm-streets'],
+  topo: ['usgs-topo'],
+  hybrid: ['esri-imagery', 'esri-hybrid-labels'],
+}
+
+const ALL_BASEMAP_LAYER_IDS = ['esri-imagery', 'osm-streets', 'usgs-topo', 'esri-hybrid-labels'] as const
 
 // Public Mapzen-on-AWS terrarium DEM tiles (no API key, free, global).
 // Single shared protocol — register exactly once, then any map can use it.
@@ -169,6 +180,8 @@ export default function ParcelMap() {
   const [searchResults, setSearchResults] = useState<ParcelFeature[] | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
   const [contoursVisible, setContoursVisible] = useState(false)
+  const [basemap, setBasemap] = useState<Basemap>('satellite')
+  const [layersOpen, setLayersOpen] = useState(false)
   const [drawMode, setDrawModeState] = useState<DrawMode>('idle')
   const [rulerDistance, setRulerDistance] = useState<string | null>(null)
   const [toolsOpen, setToolsOpen] = useState(false)
@@ -209,6 +222,7 @@ export default function ParcelMap() {
         version: 8,
         name: 'Holston Scout',
         sources: {
+          // Satellite (default) — Esri World Imagery.
           'esri-imagery': {
             type: 'raster',
             tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
@@ -219,9 +233,47 @@ export default function ParcelMap() {
             attribution:
               'Imagery © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, Maxar, Earthstar Geographics',
           },
+          // Streets — OpenStreetMap raster. Crisp address labels, useful when
+          // the user is reading roads/lots rather than checking ground cover.
+          'osm-streets': {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            minzoom: 0,
+            maxzoom: 19,
+            attribution:
+              '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+          },
+          // Topographic — USGS public-domain national basemap. Useful when the
+          // user is sizing a site for fill/cut and wants traditional topo.
+          'usgs-topo': {
+            type: 'raster',
+            tiles: ['https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}'],
+            tileSize: 256,
+            minzoom: 0,
+            maxzoom: 16,
+            attribution: 'Map data © <a href="https://www.usgs.gov/" target="_blank" rel="noopener">USGS</a>',
+          },
+          // Hybrid labels — Esri reference overlay for the satellite basemap.
+          // Renders place names + boundaries on a transparent tile so it
+          // stacks cleanly over imagery.
+          'esri-hybrid-labels': {
+            type: 'raster',
+            tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Reference_Overlay/MapServer/tile/{z}/{y}/{x}'],
+            tileSize: 256,
+            minzoom: 0,
+            maxzoom: 19,
+            attribution:
+              'Labels © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, HERE, Garmin',
+          },
         },
         layers: [
           { id: 'esri-imagery', type: 'raster', source: 'esri-imagery', minzoom: 0, maxzoom: 22 },
+          { id: 'osm-streets', type: 'raster', source: 'osm-streets', minzoom: 0, maxzoom: 22, layout: { visibility: 'none' } },
+          { id: 'usgs-topo', type: 'raster', source: 'usgs-topo', minzoom: 0, maxzoom: 22, layout: { visibility: 'none' } },
+          // Hybrid labels render last among basemap layers so they sit on top
+          // of imagery but below parcels/contours/selection.
+          { id: 'esri-hybrid-labels', type: 'raster', source: 'esri-hybrid-labels', minzoom: 0, maxzoom: 22, layout: { visibility: 'none' } },
         ],
       },
       center: [
@@ -739,6 +791,22 @@ export default function ParcelMap() {
     selectRef.current = selectParcel
   }, [loadParcelsForViewport, selectParcel])
 
+  // Toggle basemap layer visibility when the user picks a new basemap.
+  // Hybrid stacks imagery + reference labels; the others are single-layer.
+  useEffect(() => {
+    const m = map.current
+    if (!m) return
+    const apply = () => {
+      const visible = new Set(BASEMAP_LAYERS[basemap])
+      for (const id of ALL_BASEMAP_LAYER_IDS) {
+        if (!m.getLayer(id)) continue
+        m.setLayoutProperty(id, 'visibility', visible.has(id) ? 'visible' : 'none')
+      }
+    }
+    if (m.isStyleLoaded()) apply()
+    else m.once('load', apply)
+  }, [basemap])
+
   // Global keyboard shortcut: '/' or Cmd-K / Ctrl-K focuses the search input.
   // Skipped when the user is already typing into another input/textarea so
   // we don't hijack form fields. Mirrors GitHub / Linear / Notion convention.
@@ -950,16 +1018,22 @@ export default function ParcelMap() {
       >
         <div className="flex items-center gap-1 rounded-2xl bg-surface/90 backdrop-blur border border-border-default p-1 shadow-lg">
           <ActionBarButton
-            label={contoursVisible ? 'Hide contour lines' : 'Show contour lines'}
-            pressed={contoursVisible}
-            onClick={toggleContours}
-            icon={<Mountain className="w-5 h-5" />}
-            text="Topo"
+            label="Map layers"
+            pressed={layersOpen || basemap !== 'satellite' || contoursVisible}
+            onClick={() => {
+              setLayersOpen((v) => !v)
+              setToolsOpen(false)
+            }}
+            icon={<Layers className="w-5 h-5" />}
+            text="Layers"
           />
           <ActionBarButton
             label="Drawing tools"
             pressed={toolsOpen}
-            onClick={() => setToolsOpen((v) => !v)}
+            onClick={() => {
+              setToolsOpen((v) => !v)
+              setLayersOpen(false)
+            }}
             icon={<Ruler className="w-5 h-5" />}
             text="Tools"
           />
@@ -984,6 +1058,78 @@ export default function ParcelMap() {
           />
         </div>
       </nav>
+
+      {/* Layers popover — basemap chooser + overlay toggles. Appears above
+          the bottom bar when Layers is pressed. */}
+      {layersOpen && (
+        <div
+          role="menu"
+          aria-label="Map layers"
+          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none [&>*]:pointer-events-auto"
+        >
+          <div className="rounded-2xl bg-surface/95 backdrop-blur border border-border-default shadow-xl overflow-hidden w-72">
+            <div className="px-3 py-2 border-b border-border-subtle text-[10px] uppercase tracking-wider text-text-tertiary">
+              Basemap
+            </div>
+            <div className="grid grid-cols-2 gap-1 p-2">
+              {([
+                { id: 'satellite', label: 'Satellite' },
+                { id: 'streets', label: 'Streets' },
+                { id: 'topo', label: 'Topographic' },
+                { id: 'hybrid', label: 'Hybrid' },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setBasemap(opt.id)}
+                  aria-pressed={basemap === opt.id}
+                  className={cn(
+                    'h-10 rounded-lg text-xs font-medium transition-colors',
+                    basemap === opt.id
+                      ? 'bg-brand text-white'
+                      : 'bg-white/5 text-text-primary hover:bg-white/10',
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <div className="px-3 py-2 border-t border-border-subtle text-[10px] uppercase tracking-wider text-text-tertiary">
+              Overlays
+            </div>
+            <div className="p-2">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={contoursVisible}
+                onClick={toggleContours}
+                className={cn(
+                  'w-full flex items-center justify-between gap-3 px-3 h-10 rounded-lg text-left text-sm transition-colors',
+                  contoursVisible ? 'bg-brand/20 text-white' : 'hover:bg-white/5 text-text-primary',
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <Mountain className="w-4 h-4" /> Contour lines
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'inline-block w-9 h-5 rounded-full relative transition-colors',
+                    contoursVisible ? 'bg-brand' : 'bg-white/15',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                      contoursVisible ? 'translate-x-4' : 'translate-x-0.5',
+                    )}
+                  />
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tools popover — appears above the bottom bar when Tools is pressed. */}
       {toolsOpen && (
