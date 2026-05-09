@@ -203,8 +203,7 @@ export default function ParcelMap() {
       container: mapContainer.current,
       style: {
         version: 8,
-        name: 'TN Land Atlas',
-        metadata: { 'tn-land-atlas:counties': ['Sullivan', 'Washington', 'Carter'] },
+        name: 'Holston Scout',
         sources: {
           'esri-imagery': {
             type: 'raster',
@@ -799,7 +798,7 @@ export default function ParcelMap() {
     <div
       className="relative h-full w-full"
       role="application"
-      aria-label="Tennessee parcel map — pan and zoom to explore parcels"
+      aria-label="Parcel map — pan and zoom to explore parcels"
     >
       <div
         ref={mapContainer}

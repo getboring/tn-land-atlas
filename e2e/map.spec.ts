@@ -131,15 +131,15 @@ test.describe('Holston Scout', () => {
     expect(box!.height).toBeGreaterThanOrEqual(16)
   })
 
-  test('Holston Scout wordmark uses Playfair Display', async ({ page }) => {
-    // The wordmark gets the .font-display class which resolves to Playfair.
-    // The font is loaded via Google Fonts; document.fonts must report it ready.
+  test('Holston Scout wordmark uses Inter', async ({ page }) => {
+    // Post-conversion to the HolstonBuilder design family, the wordmark's
+    // .font-display class resolves to Inter (one type family across body + display).
     await page.evaluate(() => document.fonts.ready)
     const fontFamily = await page.evaluate(() => {
       const wordmark = document.querySelector('header[role="banner"] .font-display')
       return wordmark ? getComputedStyle(wordmark).fontFamily : null
     })
-    expect(fontFamily).toContain('Playfair Display')
+    expect(fontFamily).toContain('Inter')
   })
 
   test('selected parcel shows corner-node markers', async ({ page }) => {

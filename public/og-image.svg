@@ -24,9 +24,9 @@
   <text x="290" y="290" font-family="Inter, system-ui, sans-serif" font-size="78" font-weight="700" fill="#F8FAFC">Holston Scout</text>
   <text x="290" y="335" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="600" fill="#F59E0B" letter-spacing="2">BY HOLSTON INTEL</text>
   <text x="290" y="395" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="400" fill="#CBD5E1">Scout the ground. Know the build.</text>
-  <text x="290" y="430" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="400" fill="#94A3B8">East Tennessee · Sullivan · Washington · Carter</text>
+  <text x="290" y="430" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="400" fill="#94A3B8">Owner · Measurements · Zoning · Topography</text>
 
   <!-- Bottom rule + tag -->
   <line x1="80" y1="540" x2="1120" y2="540" stroke="#334155" stroke-width="1"/>
-  <text x="80" y="575" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#F59E0B" letter-spacing="2">PRE-CONSTRUCTION  ·  PARCEL INTELLIGENCE  ·  TN BUILDERS</text>
+  <text x="80" y="575" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#F59E0B" letter-spacing="2">PRE-CONSTRUCTION  ·  PARCEL INTELLIGENCE  ·  FOR BUILDERS</text>
 </svg>

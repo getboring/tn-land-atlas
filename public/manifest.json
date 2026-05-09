@@ -1,11 +1,11 @@
 {
-  "name": "TN Land Atlas",
-  "short_name": "LandAtlas",
-  "description": "Parcel mapping for Sullivan, Washington, and Carter counties.",
+  "name": "Holston Scout",
+  "short_name": "Scout",
+  "description": "Pre-construction parcel intelligence for builders.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "background_color": "#02040A",
+  "theme_color": "#02040A",
   "icons": [
     { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]

@@ -6,10 +6,10 @@
 // Conventions ("rules of thumb"):
 // - Money is whole dollars (ArcGIS gives whole-dollar APPRAISAL / PRICE).
 // - Distances in meters internally, formatted as feet/miles for display
-//   (Tennessee real-estate uses imperial).
+//   (US real-estate uses imperial).
 // - Year length: 365.25 days (averages leap years).
 // - Earth radius: 6371000 m (haversine convention).
-// - Acreage tiers from TN Rural Land Brokers convention.
+// - Acreage tiers from rural-land-brokerage convention.
 // - Holding-duration tiers from how long-tenured ownership is bucketed by
 //   the appraisal community: < 2y recent, 2-15 established, 15-30 long-held,
 //   30+ generational.
