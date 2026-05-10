@@ -89,6 +89,8 @@ export function FootprintForm({ initial, onChange, onSave, onDelete }: Footprint
       <Field label="Name">
         <input
           type="text"
+          data-testid="fit-form-name"
+          aria-label="Footprint name"
           value={values.name}
           onChange={(e) => setField('name', e.target.value)}
           placeholder='e.g. "40 x 60 shop"'
@@ -98,34 +100,57 @@ export function FootprintForm({ initial, onChange, onSave, onDelete }: Footprint
 
       <div className="grid grid-cols-2 gap-2">
         <Field label="Width (ft)">
-          <NumberInput value={values.widthFt} min={1} step={1} onChange={(n) => setField('widthFt', n)} />
+          <NumberInput
+            testId="fit-form-width"
+            ariaLabel="Width in feet"
+            value={values.widthFt}
+            min={1}
+            step={1}
+            onChange={(n) => setField('widthFt', n)}
+          />
         </Field>
         <Field label="Length (ft)">
-          <NumberInput value={values.lengthFt} min={1} step={1} onChange={(n) => setField('lengthFt', n)} />
+          <NumberInput
+            testId="fit-form-length"
+            ariaLabel="Length in feet"
+            value={values.lengthFt}
+            min={1}
+            step={1}
+            onChange={(n) => setField('lengthFt', n)}
+          />
         </Field>
       </div>
 
       <Field label="Rotation (° from north, clockwise)">
         <div className="flex items-center gap-2">
-          <NumberInput value={values.rotationDeg} step={5} onChange={(n) => setField('rotationDeg', normalizeAngle(n))} />
+          <NumberInput
+            testId="fit-form-rotation"
+            ariaLabel="Rotation in degrees"
+            value={values.rotationDeg}
+            step={5}
+            onChange={(n) => setField('rotationDeg', normalizeAngle(n))}
+          />
           <div className="flex items-center gap-1">
             <RotateBump
               label="-15°"
+              ariaLabel="Rotate -15 degrees"
               onClick={() => setField('rotationDeg', normalizeAngle(values.rotationDeg - 15))}
             />
             <RotateBump
               label="+15°"
+              ariaLabel="Rotate +15 degrees"
               onClick={() => setField('rotationDeg', normalizeAngle(values.rotationDeg + 15))}
             />
             <RotateBump
               label="+90°"
+              ariaLabel="Rotate +90 degrees"
               onClick={() => setField('rotationDeg', normalizeAngle(values.rotationDeg + 90))}
             />
             <button
               type="button"
+              aria-label="Reset rotation"
               onClick={() => setField('rotationDeg', 0)}
               className="text-[11px] text-text-tertiary hover:text-white px-2 h-9 rounded-lg hover:bg-white/5"
-              title="Reset rotation"
             >
               Reset
             </button>
@@ -194,13 +219,21 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function RotateBump({ label, onClick }: { label: string; onClick: () => void }) {
+function RotateBump({
+  label,
+  ariaLabel,
+  onClick,
+}: {
+  label: string
+  ariaLabel: string
+  onClick: () => void
+}) {
   return (
     <button
       type="button"
+      aria-label={ariaLabel}
       onClick={onClick}
       className="inline-flex items-center justify-center h-9 px-2 min-w-[42px] rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10 data-value"
-      title={`Rotate ${label}`}
     >
       {label}
     </button>
@@ -219,16 +252,22 @@ function NumberInput({
   value,
   min,
   step,
+  testId,
+  ariaLabel,
   onChange,
 }: {
   value: number
   min?: number
   step?: number
+  testId?: string
+  ariaLabel?: string
   onChange: (n: number) => void
 }) {
   return (
     <input
       type="number"
+      data-testid={testId}
+      aria-label={ariaLabel}
       value={value}
       min={min}
       step={step}

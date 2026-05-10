@@ -415,10 +415,12 @@ test.describe('Holston Scout', () => {
 
     // Type a name, change rotation to 45, and save. The default 40 x 60 width
     // and length stay; the form's mount-time onChange has already populated
-    // the draft so save can complete with valid geometry.
-    await page.locator('[data-fit-workspace] input[type="text"]').first().fill('40 x 60 shop')
-    const rotationInput = page.locator('[data-fit-workspace] input[type="number"]').nth(2)
-    await rotationInput.fill('45')
+    // the draft so save can complete with valid geometry. Use stable test
+    // ids to dodge layout/order fragility across viewports.
+    const nameInput = page.getByTestId('fit-form-name').first()
+    await expect(nameInput).toBeVisible({ timeout: 8000 })
+    await nameInput.fill('40 x 60 shop')
+    await page.getByTestId('fit-form-rotation').first().fill('45')
     await page.getByRole('button', { name: /^Save footprint$/i }).click()
 
     // The library now contains the saved footprint as a list item.
@@ -434,12 +436,13 @@ test.describe('Holston Scout', () => {
 
     // Selecting the saved footprint preserves rotation. Auto-selection on
     // re-open already loads it, so just read the rotation field.
-    const rotationAfter = page.locator('[data-fit-workspace] input[type="number"]').nth(2)
-    await expect(rotationAfter).toHaveValue('45')
+    await expect(page.getByTestId('fit-form-rotation').first()).toHaveValue('45')
   })
 
-  test('mobile bottom sheet exposes Footprint and Fit tabs', async ({ page, isMobile }) => {
-    test.skip(!isMobile, 'mobile-only layout')
+  test('mobile bottom sheet exposes Footprint and Fit tabs', async ({ page, viewport }) => {
+    // Bottom sheet only renders below sm (640px). iPad Mini's isMobile flag
+    // is true even at tablet width, so the predicate uses viewport size.
+    test.skip((viewport?.width ?? 0) >= 640, 'Bottom sheet only renders below sm breakpoint')
     await loadParcelsAt(page, -82.3534, 36.3134, 16)
     await clickFirstParcel(page)
     await page.getByRole('button', { name: /Test Building Fit/i }).click()
@@ -478,8 +481,8 @@ test.describe('Holston Scout', () => {
     })
     expect(before).not.toBeNull()
 
-    // Click the +90° quick-button.
-    await page.getByRole('button', { name: 'Rotate +90°' }).click()
+    // Click the +90° quick-button (aria-label).
+    await page.getByRole('button', { name: 'Rotate +90 degrees' }).first().click()
 
     // Geometry should have moved as a result of the rotation.
     await expect
@@ -508,10 +511,15 @@ test.describe('Holston Scout', () => {
     await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
 
     // Need a name in the form, Save Placement auto-saves the footprint.
-    await page.locator('[data-fit-workspace] input[type="text"]').first().fill('Save-test shop')
+    const nameInput = page.getByTestId('fit-form-name').first()
+    await expect(nameInput).toBeVisible({ timeout: 8000 })
+    await nameInput.fill('Save-test shop')
 
-    // Click Save placement.
-    await page.getByRole('button', { name: /^Save placement$/ }).click()
+    // Click Save placement. On mobile the action lives inside the Fit tab
+    // of the bottom sheet, so flip tabs first if we're on the mobile layout.
+    const fitTab = page.getByRole('tab', { name: 'Fit' })
+    if (await fitTab.count()) await fitTab.click()
+    await page.getByRole('button', { name: /^Save placement$/ }).first().click()
 
     // Brief saved-flash, button text changes.
     await expect(page.getByRole('button', { name: /Placement saved/ })).toBeVisible({ timeout: 2000 })
