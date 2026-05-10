@@ -130,6 +130,27 @@ describe('SetbackConfigSchema (discriminated on mode)', () => {
   it('rejects unknown mode', () => {
     expect(SetbackConfigSchema.safeParse({ mode: 'square' }).success).toBe(false)
   })
+  it('rejects negative uniform setback', () => {
+    expect(
+      SetbackConfigSchema.safeParse({ mode: 'uniform', setbackFt: -5 }).success,
+    ).toBe(false)
+  })
+  it('accepts zero uniform setback (clears the envelope)', () => {
+    expect(
+      SetbackConfigSchema.safeParse({ mode: 'uniform', setbackFt: 0 }).success,
+    ).toBe(true)
+  })
+  it('rejects negative manual setbacks', () => {
+    expect(
+      SetbackConfigSchema.safeParse({
+        mode: 'manual',
+        frontFt: -1,
+        sideFt: null,
+        rearFt: null,
+        notes: null,
+      }).success,
+    ).toBe(false)
+  })
 })
 
 describe('FootprintProjectSchema', () => {
@@ -162,6 +183,48 @@ describe('FootprintProjectSchema', () => {
   it('preserves rotationDeg through parse', () => {
     const out = FootprintProjectSchema.parse({ ...validRectangleFootprint, rotationDeg: 45 })
     expect(out.rotationDeg).toBe(45)
+  })
+
+  // ── Phase 4 hardening: positive caps + sane upper bounds ────────────
+  it('rejects negative widthFt', () => {
+    expect(
+      FootprintProjectSchema.safeParse({ ...validRectangleFootprint, widthFt: -10 }).success,
+    ).toBe(false)
+  })
+  it('rejects zero widthFt', () => {
+    expect(
+      FootprintProjectSchema.safeParse({ ...validRectangleFootprint, widthFt: 0 }).success,
+    ).toBe(false)
+  })
+  it('rejects negative lengthFt', () => {
+    expect(
+      FootprintProjectSchema.safeParse({ ...validRectangleFootprint, lengthFt: -1 }).success,
+    ).toBe(false)
+  })
+  it('rejects negative footprintSqft', () => {
+    expect(
+      FootprintProjectSchema.safeParse({ ...validRectangleFootprint, footprintSqft: -1 }).success,
+    ).toBe(false)
+  })
+  it('rejects unreasonably large widthFt (cap at 100k)', () => {
+    expect(
+      FootprintProjectSchema.safeParse({ ...validRectangleFootprint, widthFt: 100_001 }).success,
+    ).toBe(false)
+  })
+  it('rejects fractional stories (must be integer)', () => {
+    expect(
+      FootprintProjectSchema.safeParse({ ...validRectangleFootprint, stories: 1.5 }).success,
+    ).toBe(false)
+  })
+  it('rejects negative stories', () => {
+    expect(
+      FootprintProjectSchema.safeParse({ ...validRectangleFootprint, stories: -1 }).success,
+    ).toBe(false)
+  })
+  it('rejects oversized name (over 200 chars)', () => {
+    expect(
+      FootprintProjectSchema.safeParse({ ...validRectangleFootprint, name: 'A'.repeat(201) }).success,
+    ).toBe(false)
   })
 })
 

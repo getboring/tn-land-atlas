@@ -688,6 +688,41 @@ test.describe('Holston Scout', () => {
     expect(['Polygon', 'MultiPolygon']).toContain(s.envelope.geometry.type)
   })
 
+  test('project export downloads a .hscout.json file with the expected envelope', async ({ page }) => {
+    // Seed one footprint so the export carries data.
+    await page.goto('/?lng=-82.3534&lat=36.3134&z=16')
+    await page.evaluate(() => window.localStorage.removeItem('holston-scout/build-fit/v1'))
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    // Save a footprint first (mobile flips to Fit tab for this in other
+    // tests; Save footprint lives on the Footprint tab so we don't need
+    // to flip).
+    await page.locator('[data-testid="fit-form-name"]:visible').fill('Export-test shop')
+    await page.getByRole('button', { name: /^Save footprint$/i }).click()
+    await expect(page.getByRole('button', { name: /Export-test shop/ })).toBeVisible()
+
+    // Trigger the export and capture the download.
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: 'Export project file' }).click(),
+    ])
+    expect(download.suggestedFilename()).toMatch(/^holston-scout-fit-.*\.hscout\.json$/)
+
+    // Read the download body and assert the envelope shape.
+    const path = await download.path()
+    expect(path).toBeTruthy()
+    const fs = await import('node:fs/promises')
+    const text = await fs.readFile(path!, 'utf8')
+    const parsed = JSON.parse(text)
+    expect(parsed.schemaVersion).toBe(1)
+    expect(parsed.app?.name).toBe('Holston Scout')
+    expect(typeof parsed.disclaimer).toBe('string')
+    expect(parsed.data?.footprints?.length).toBeGreaterThan(0)
+  })
+
   test('project import accepts a valid file and adds footprints to the library', async ({ page }) => {
     // Start with an empty store so the import is the only source of data.
     await page.goto('/?lng=-82.3534&lat=36.3134&z=16')

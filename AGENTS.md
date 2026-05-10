@@ -199,7 +199,7 @@ the FilterSheet UI.
 - `npm test` (vitest), 170+ unit tests across `src/lib/{insights,permalink,lazyRetry,build-fit}.ts` plus `ownerSearchTerm`
 - `npm run build` — `tsc -b` over app + node + functions project refs
 - `npx eslint .` — zero issues
-- `BASE_URL=<prod> npx playwright test` — 63 E2E tests across 3 viewports (189 runs)
+- `BASE_URL=<prod> npx playwright test` — ~33 E2E tests across 3 viewports (with a couple mobile-only), ~97 effective runs
 
 ### 20. The whole app sits inside an ErrorBoundary
 `App.tsx` wraps `<Suspense>` in `<ErrorBoundary>` from the

@@ -130,6 +130,32 @@ describe('storage: footprints round-trip', () => {
     expect(getFootprints()[0]?.name).toBe('40x60 shop')
   })
 
+  it('returns ok:true with the new store on a successful write', () => {
+    const r = upsertFootprint(fp())
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.store.footprints).toHaveLength(1)
+  })
+
+  it('returns ok:false reason:storage when the localStorage write fails', () => {
+    // Force Storage.prototype.setItem to throw (mimics quota / private-mode).
+    // Patching window.localStorage.setItem directly doesn't take in jsdom
+    // because the localStorage instance lookup may bypass the per-instance
+    // method; the prototype is the reliable seam.
+    const proto = Object.getPrototypeOf(window.localStorage) as Storage
+    const original = proto.setItem
+    proto.setItem = () => {
+      throw new Error('QuotaExceededError')
+    }
+    try {
+      const r = upsertFootprint(fp({ id: 'fp-quota-blocked' }))
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toBe('storage')
+    } finally {
+      proto.setItem = original
+      __testing.resetCache()
+    }
+  })
+
   it('updates by id without duplicating', () => {
     upsertFootprint(fp({ id: 'fp-A', name: 'Original' }))
     upsertFootprint(fp({ id: 'fp-A', name: 'Renamed' }))

@@ -56,16 +56,21 @@ function readRaw(): BuildFitStore {
   }
 }
 
-function writeRaw(store: BuildFitStore): void {
-  if (typeof window === 'undefined') return
+/** Returns false when the write was rejected (quota / private-mode /
+ *  serialization failure). Callers should treat false as a hard failure
+ *  and surface it to the user instead of silently dropping. */
+function writeRaw(store: BuildFitStore): boolean {
+  if (typeof window === 'undefined') return false
   try {
     const next: BuildFitStore = { ...store, updatedAt: new Date().toISOString() }
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
     // Same-tab notification, the native 'storage' event only fires on
     // OTHER tabs by spec, so subscribers in the writing tab need this.
     window.dispatchEvent(new CustomEvent(EVENT_NAME))
+    return true
   } catch {
-    // Not authoritative storage, D1 or equivalent will be eventually.
+    // Quota exceeded, private-mode block, serialization edge case, etc.
+    return false
   }
 }
 
@@ -76,15 +81,15 @@ export function getFootprints(): FootprintProject[] {
 }
 
 /**
- * Insert or update a footprint project. Match by `id`. Returns the new
- * full store snapshot for callers that need it (most don't, subscribe
- * via useFootprints instead).
- *
- * Writes go through FootprintProjectSchema first. A bad write throws here
- * rather than corrupting localStorage and silently emptying the entire
- * store on the next read.
+ * Insert or update a footprint project. Match by `id`. Returns
+ * { ok: true, store } on a successful persist, { ok: false, reason } when
+ * the schema fails OR the localStorage write was rejected (quota/private
+ * mode/etc). Throwing on schema is preserved via .parse so callers in
+ * tests still get the loud failure for malformed payloads.
  */
-export function upsertFootprint(footprint: FootprintProject): BuildFitStore {
+export function upsertFootprint(
+  footprint: FootprintProject,
+): { ok: true; store: BuildFitStore } | { ok: false; reason: 'storage' } {
   const parsed = FootprintProjectSchema.parse(footprint)
   const store = readRaw()
   const existing = store.footprints.findIndex((f) => f.id === parsed.id)
@@ -93,8 +98,8 @@ export function upsertFootprint(footprint: FootprintProject): BuildFitStore {
   } else {
     store.footprints.unshift(parsed)
   }
-  writeRaw(store)
-  return store
+  if (!writeRaw(store)) return { ok: false, reason: 'storage' }
+  return { ok: true, store }
 }
 
 export function removeFootprint(id: string): void {
@@ -111,7 +116,9 @@ export function getSessions(): FitSession[] {
   return readRaw().sessions
 }
 
-export function upsertSession(session: FitSession): BuildFitStore {
+export function upsertSession(
+  session: FitSession,
+): { ok: true; store: BuildFitStore } | { ok: false; reason: 'storage' } {
   const parsed = FitSessionSchema.parse(session)
   const store = readRaw()
   const existing = store.sessions.findIndex((s) => s.id === parsed.id)
@@ -120,8 +127,8 @@ export function upsertSession(session: FitSession): BuildFitStore {
   } else {
     store.sessions.unshift(parsed)
   }
-  writeRaw(store)
-  return store
+  if (!writeRaw(store)) return { ok: false, reason: 'storage' }
+  return { ok: true, store }
 }
 
 export function removeSession(id: string): void {

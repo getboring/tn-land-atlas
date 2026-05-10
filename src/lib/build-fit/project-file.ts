@@ -179,15 +179,57 @@ export function importProjectFile(text: string): ImportResult {
     }
   }
 
-  // All good, write.
-  for (const fp of file.data.footprints) upsertFootprint(fp)
-  for (const sess of file.data.sessions) upsertSession(sess as FitSession)
+  // Referential integrity check before any write. A session that points
+  // at a footprintProjectId not in the imported footprints AND not in
+  // the existing store is an orphan; reject the whole file so we don't
+  // end up with broken session references that future export/handoff
+  // code can't reason about.
+  const existingFootprintIds = new Set(getFootprints().map((f) => f.id))
+  const importedFootprintIds = new Set(file.data.footprints.map((f) => f.id))
+  for (const sess of file.data.sessions) {
+    const known =
+      importedFootprintIds.has(sess.footprintProjectId) ||
+      existingFootprintIds.has(sess.footprintProjectId)
+    if (!known) {
+      return {
+        ok: false,
+        error: `Session ${sess.id} references missing footprint ${sess.footprintProjectId}. Aborted before writing.`,
+      }
+    }
+  }
+
+  // All good, write. Each upsert can independently fail at the
+  // localStorage layer (quota, private mode, serialization). On any
+  // failure we surface a partial-write error so the caller can warn
+  // the user instead of falsely reporting success.
+  let writtenFootprints = 0
+  let writtenSessions = 0
+  for (const fp of file.data.footprints) {
+    const r = upsertFootprint(fp)
+    if (!r.ok) {
+      return {
+        ok: false,
+        error: `Browser storage rejected the write after ${writtenFootprints} of ${file.data.footprints.length} footprints. Free up site storage and try again.`,
+      }
+    }
+    writtenFootprints++
+  }
+  for (const sess of file.data.sessions) {
+    const r = upsertSession(sess as FitSession)
+    if (!r.ok) {
+      return {
+        ok: false,
+        error: `Browser storage rejected the write after ${writtenSessions} of ${file.data.sessions.length} sessions. Free up site storage and try again.`,
+      }
+    }
+    writtenSessions++
+  }
 
   return {
     ok: true,
     summary: {
-      footprints: file.data.footprints.length,
-      sessions: file.data.sessions.length,
+      footprints: writtenFootprints,
+      sessions: writtenSessions,
     },
   }
 }

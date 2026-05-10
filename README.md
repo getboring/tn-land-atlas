@@ -236,7 +236,7 @@ functions/api/
   search.ts             POST -> ArcGIS LIKE on OWNER / ADDRESS / GISLINK
   property.ts           POST -> Supabase parallel reads, UUID-validated entity joins
 
-e2e/map.spec.ts         ~50+ tests x 3 viewports (chromium-desktop/-tablet/-mobile)
+e2e/map.spec.ts         ~33 tests x 3 viewports (with a couple mobile-only); ~97 effective runs after skips
 
 CLAUDE.md / AGENTS.md   project conventions and rules for AI agents
 ```

@@ -267,6 +267,46 @@ describe('importProjectFile', () => {
     expect(result.ok).toBe(false)
   })
 
+  it('rejects an orphan session (footprintProjectId not in payload or store)', () => {
+    const orphan = serializeProjectFile({
+      schemaVersion: 1,
+      app: { name: 'Holston Scout', version: '1.0.0', url: 'https://example.com' },
+      generatedAt: ISO,
+      disclaimer: 'x',
+      data: {
+        schemaVersion: 1,
+        footprints: [], // empty
+        sessions: [session({ footprintProjectId: 'missing-fp' })],
+        updatedAt: ISO,
+      },
+    } as never)
+    const result = importProjectFile(orphan)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/references missing footprint/i)
+    expect(getSessions()).toEqual([])
+  })
+
+  it('accepts a session whose footprint already lives in the receiving store', () => {
+    // Receiving store has fp-existing; imported file ships only a session
+    // pointing at it. Should succeed.
+    upsertFootprint(fp({ id: 'fp-existing' }))
+    const text = serializeProjectFile({
+      schemaVersion: 1,
+      app: { name: 'Holston Scout', version: '1.0.0', url: 'https://example.com' },
+      generatedAt: ISO,
+      disclaimer: 'x',
+      data: {
+        schemaVersion: 1,
+        footprints: [],
+        sessions: [session({ id: 'sess-cross-ref', footprintProjectId: 'fp-existing' })],
+        updatedAt: ISO,
+      },
+    } as never)
+    const result = importProjectFile(text)
+    expect(result.ok).toBe(true)
+    expect(getSessions().map((s) => s.id)).toEqual(['sess-cross-ref'])
+  })
+
   it('rejects a payload with an invalid footprint without writing anything', () => {
     const bad = serializeProjectFile({
       schemaVersion: 1,

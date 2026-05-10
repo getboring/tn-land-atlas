@@ -18,6 +18,14 @@
 //   No print/PDF report (Phase 5).
 //   No Send-to-Builder (much later).
 
+// 10 MB cap on imported files. Any legitimate Holston Scout export is
+// well under this (a maxed-out 10k-footprint library is ~5MB even with
+// verbose geometry). A larger file is almost certainly hostile or
+// accidentally-wrong, and JSON.parsing a multi-hundred-MB blob freezes
+// the browser before the schema check can run. Defined at module scope
+// so it's not in the workspace's render closure.
+const MAX_IMPORT_BYTES = 10 * 1024 * 1024
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X, Download, Upload, AlertTriangle, Check } from 'lucide-react'
 import { ulid } from 'ulidx'
@@ -91,9 +99,10 @@ function asFitTarget(m: maplibregl.Map): FitMapTarget {
 
 export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWorkspaceProps) {
   // ── Validate parcel geometry at the workspace boundary ────────────────────
-  // ParcelFeature.geometry is typed as Polygon, but ArcGIS occasionally
-  // returns MultiPolygon. Run the geometry through Zod here so the rest of
-  // the workspace operates on a properly-typed PolygonOrMulti.
+  // ParcelFeature.geometry is now typed as Polygon | MultiPolygon in
+  // src/lib/arcgis.ts; the Zod gate here is defense in depth (rejects
+  // anything that snuck through the upstream API) and narrows from
+  // ParcelGeometry to the build-fit module's own PolygonOrMulti.
   const validated = useMemo<{ ok: true; geom: PolygonOrMulti } | { ok: false; error: string }>(() => {
     const result = PolygonOrMultiSchema.safeParse(parcel.geometry)
     if (!result.success) {
@@ -200,6 +209,14 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
       if (!file) return
+      if (file.size > MAX_IMPORT_BYTES) {
+        flashProjectNotice(
+          'err',
+          `File is too large (${Math.round(file.size / (1024 * 1024))} MB). Limit is 10 MB.`,
+        )
+        if (fileInputRef.current) fileInputRef.current.value = ''
+        return
+      }
       try {
         const text = await readFileAsText(file)
         const result = importProjectFile(text)
@@ -428,6 +445,13 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       map.dragPan.enable()
     }
 
+    // Window-level fallback: if the user releases the pointer outside the
+    // map (e.g. dragged off the canvas onto the chrome or browser frame),
+    // MapLibre's own mouseup/touchend won't fire and dragPan would stay
+    // disabled until the next map mouseup. Listen at the window so we
+    // recover regardless of where the release happens.
+    const onWindowEnd = () => onEnd()
+
     map.on('mouseenter', 'fit-footprint-handles', onEnter)
     map.on('mouseleave', 'fit-footprint-handles', onLeave)
     map.on('mousedown', 'fit-footprint-handles', startDrag)
@@ -436,6 +460,10 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
     map.on('touchmove', onMove)
     map.on('mouseup', onEnd)
     map.on('touchend', onEnd)
+    window.addEventListener('mouseup', onWindowEnd)
+    window.addEventListener('touchend', onWindowEnd)
+    window.addEventListener('touchcancel', onWindowEnd)
+    window.addEventListener('blur', onWindowEnd)
 
     return () => {
       map.off('mouseenter', 'fit-footprint-handles', onEnter)
@@ -446,6 +474,10 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       map.off('touchmove', onMove)
       map.off('mouseup', onEnd)
       map.off('touchend', onEnd)
+      window.removeEventListener('mouseup', onWindowEnd)
+      window.removeEventListener('touchend', onWindowEnd)
+      window.removeEventListener('touchcancel', onWindowEnd)
+      window.removeEventListener('blur', onWindowEnd)
       canvas.style.cursor = ''
       // Re-enable in case a drag was in flight at unmount.
       map.dragPan.enable()
@@ -484,10 +516,14 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         createdAt: currentProject?.createdAt ?? now,
         updatedAt: now,
       }
-      upsertFootprint(project)
+      const r = upsertFootprint(project)
+      if (!r.ok) {
+        flashProjectNotice('err', 'Browser storage rejected the write. Free up site storage and try again.')
+        return
+      }
       selectFootprint(id)
     },
-    [currentProject, computed, selectFootprint],
+    [currentProject, computed, selectFootprint, flashProjectNotice],
   )
 
   const onDelete = useCallback(() => {
@@ -533,7 +569,11 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         createdAt: now,
         updatedAt: now,
       }
-      upsertFootprint(project)
+      const r = upsertFootprint(project)
+      if (!r.ok) {
+        flashProjectNotice('err', 'Browser storage rejected the footprint write. Free up site storage and try again.')
+        return
+      }
       selectFootprint(footprintProjectId)
     }
 
@@ -589,7 +629,11 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       createdAt: now,
       updatedAt: now,
     }
-    upsertSession(session)
+    const r = upsertSession(session)
+    if (!r.ok) {
+      flashProjectNotice('err', 'Browser storage rejected the placement write. Free up site storage and try again.')
+      return
+    }
     setPlacementSavedAt(Date.now())
     if (savedFlashTimeoutRef.current != null) {
       window.clearTimeout(savedFlashTimeoutRef.current)
@@ -598,7 +642,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       setPlacementSavedAt(null)
       savedFlashTimeoutRef.current = null
     }, 1500)
-  }, [computed, currentProject, draftValues, parcel, validated, selectFootprint, setbackConfig])
+  }, [computed, currentProject, draftValues, parcel, validated, selectFootprint, setbackConfig, flashProjectNotice])
 
   // Make sure a pending flash-clear can't fire after unmount.
   useEffect(() => {

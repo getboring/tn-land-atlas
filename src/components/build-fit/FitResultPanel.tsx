@@ -71,6 +71,7 @@ export function FitResultPanel({
     warnings,
   } = result
   const status = statusOf(fitsParcel, fitsEnvelope, footprintSqft != null)
+  const statusText = statusLabel(status, fitsEnvelope)
 
   return (
     <div className="space-y-3 text-xs">
@@ -78,7 +79,7 @@ export function FitResultPanel({
       <div className="flex items-start gap-2">
         <StatusBadge status={status} />
         <div className="flex-1">
-          <div className="text-sm font-semibold text-text-primary">{statusLabel(status)}</div>
+          <div className="text-sm font-semibold text-text-primary">{statusText}</div>
           {subtitle && <div className="text-[11px] text-text-tertiary mt-0.5">{subtitle}</div>}
         </div>
       </div>
@@ -184,10 +185,13 @@ function statusOf(
   return 'pending'
 }
 
-function statusLabel(status: Status): string {
+function statusLabel(status: Status, fitsEnvelope: boolean | null): string {
   switch (status) {
     case 'fits':
-      return 'Fits parcel and envelope'
+      // Only claim envelope fit when an envelope was actually evaluated.
+      // fitsEnvelope === null means no setback configured or manual mode
+      // (which doesn't synthesize a geometry yet).
+      return fitsEnvelope === true ? 'Fits parcel and setback envelope' : 'Fits parcel'
     case 'conflict-parcel':
       return 'Crosses parcel boundary'
     case 'conflict-envelope':
