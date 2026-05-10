@@ -249,6 +249,20 @@ button, [role="button"] {
   div[role="status"] {
     display: none !important;
   }
+  /* Phase 5: when printing from build-fit mode, the workspace dialog
+     covers the screen. Strip its positioning and hide every child that
+     isn't the fit-report print target so only the report flows onto the
+     page. The [data-print-target] selector below then promotes the report
+     to a normal block. */
+  [data-fit-workspace] {
+    position: static !important;
+    inset: auto !important;
+    z-index: auto !important;
+    pointer-events: auto !important;
+  }
+  [data-fit-workspace] > *:not([data-print-target]) {
+    display: none !important;
+  }
   /* Restore the detail panel: take it out of position:absolute layout
      and let it flow on the page in normal block context. */
   [data-print-target] {

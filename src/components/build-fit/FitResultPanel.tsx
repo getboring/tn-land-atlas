@@ -14,7 +14,7 @@
 //   conflict     red warning
 //   unknown      neutral gray with explanation
 
-import { Check, AlertTriangle, Info, Save, RotateCcw } from 'lucide-react'
+import { Check, AlertTriangle, Info, Save, RotateCcw, Printer, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SetbackConfig } from '@/lib/build-fit/schemas'
 
@@ -48,6 +48,12 @@ interface FitResultPanelProps {
   setbackConfig?: SetbackConfig
   /** Phase 3: update setback configuration. */
   onSetbackConfigChange?: (next: SetbackConfig) => void
+  /** Phase 5: print the fit report. Disabled until a footprint is placed. */
+  onPrintReport?: () => void
+  /** Phase 5: copy the plain-text summary to clipboard. */
+  onCopySummary?: () => void
+  /** Phase 5: brief flash after a successful Copy summary. */
+  copiedFlash?: boolean
 }
 
 export function FitResultPanel({
@@ -59,6 +65,9 @@ export function FitResultPanel({
   savedFlash = false,
   setbackConfig,
   onSetbackConfigChange,
+  onPrintReport,
+  onCopySummary,
+  copiedFlash = false,
 }: FitResultPanelProps) {
   const {
     fitsParcel,
@@ -126,8 +135,8 @@ export function FitResultPanel({
         />
       )}
 
-      {/* 6. Actions, Phase 2: Save Placement + Reset Center. */}
-      {(onSavePlacement || onResetCenter) && (
+      {/* 6. Actions: Save Placement + Print + Copy summary + Reset Center. */}
+      {(onSavePlacement || onResetCenter || onPrintReport || onCopySummary) && (
         <div className="flex flex-wrap items-center gap-2 pt-1">
           {onSavePlacement && (
             <button
@@ -145,6 +154,43 @@ export function FitResultPanel({
             >
               {savedFlash ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
               {savedFlash ? 'Placement saved' : 'Save placement'}
+            </button>
+          )}
+          {onPrintReport && (
+            <button
+              type="button"
+              onClick={onPrintReport}
+              disabled={status === 'pending'}
+              aria-label="Print fit report"
+              title="Print a fit report with parcel, footprint, and diagram"
+              className={cn(
+                'inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-xs font-semibold border transition-colors',
+                status === 'pending'
+                  ? 'bg-white/5 text-text-tertiary border-border-default cursor-not-allowed'
+                  : 'bg-white/5 text-text-primary border-border-default hover:bg-white/10',
+              )}
+            >
+              <Printer className="w-3.5 h-3.5" /> Print
+            </button>
+          )}
+          {onCopySummary && (
+            <button
+              type="button"
+              onClick={onCopySummary}
+              disabled={status === 'pending'}
+              aria-label="Copy fit summary to clipboard"
+              title="Copy a plain-text fit summary to the clipboard"
+              className={cn(
+                'inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-xs font-semibold border transition-colors',
+                status === 'pending'
+                  ? 'bg-white/5 text-text-tertiary border-border-default cursor-not-allowed'
+                  : copiedFlash
+                    ? 'bg-success/20 text-success border-success/40'
+                    : 'bg-white/5 text-text-primary border-border-default hover:bg-white/10',
+              )}
+            >
+              {copiedFlash ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              {copiedFlash ? 'Copied' : 'Copy summary'}
             </button>
           )}
           {onResetCenter && centerOverridden && (

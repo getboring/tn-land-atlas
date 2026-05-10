@@ -800,6 +800,136 @@ test.describe('Holston Scout', () => {
     await expect(page.locator('[data-project-notice]:visible')).toContainText(/not valid JSON/i)
   })
 
+  test('Phase 5: Copy summary writes a fit summary to the clipboard', async ({ page }) => {
+    // We avoid readText (blocked under mobile-emulated origins without an
+    // active user gesture) and instead capture writeText into a global so
+    // the test reads it back synchronously. This is also closer to what
+    // the production code does: the handler only writes; it never reads.
+    await page.addInitScript(() => {
+      const w = window as unknown as { __copied?: string }
+      const orig = navigator.clipboard?.writeText.bind(navigator.clipboard)
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText: async (text: string) => {
+            w.__copied = text
+            if (orig) {
+              try { await orig(text) } catch { /* ignore real-clipboard denial */ }
+            }
+          },
+        },
+      })
+    })
+    await page.goto('/?lng=-82.3534&lat=36.3134&z=16')
+    await page.evaluate(() => window.localStorage.removeItem('holston-scout/build-fit/v1'))
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    // Name the footprint so the summary's Name line is stable. On mobile
+    // the form lives in the Footprint tab (active by default); on tablet
+    // and desktop both panels are mounted side-by-side.
+    const nameInput = page.locator('[data-testid="fit-form-name"]:visible')
+    await expect(nameInput).toBeVisible({ timeout: 8000 })
+    await nameInput.fill('40 x 60 shop')
+
+    // The Copy summary button lives in the Fit result panel. On mobile
+    // (<sm) that panel is hidden behind the "Fit" tab. Switch tabs if the
+    // mobile tablist is present.
+    const fitTab = page.getByRole('tab', { name: 'Fit' })
+    if ((await fitTab.count()) > 0 && (await fitTab.isVisible())) {
+      await fitTab.click()
+    }
+
+    const copyButton = page.getByRole('button', { name: /Copy fit summary to clipboard/i }).filter({ visible: true })
+    await expect(copyButton).toBeVisible({ timeout: 4000 })
+    await copyButton.click()
+
+    // Button flashes "Copied".
+    await expect(page.getByRole('button', { name: /Copy fit summary to clipboard/i }).filter({ visible: true })).toContainText(/Copied/i)
+
+    // The init-script clipboard shim captured the writeText payload into a
+    // window global. Read it back without touching readText (which mobile
+    // emulation blocks).
+    const clipboardText = await page.evaluate(
+      () => (window as unknown as { __copied?: string }).__copied ?? '',
+    )
+    expect(clipboardText).toContain('Holston Scout — Building Fit Report')
+    expect(clipboardText).toContain('Name: 40 x 60 shop')
+    expect(clipboardText).toContain('Dimensions: 40 × 60 ft')
+    expect(clipboardText).toContain('Planning estimate only')
+  })
+
+  test('Save placement on a blank-name footprint surfaces a notice instead of no-op', async ({ page }) => {
+    // Audit finding: Save Placement silently returned when the footprint
+    // had no name. Now it flashes an error notice telling the user to name
+    // the footprint first.
+    await page.goto('/?lng=-82.3534&lat=36.3134&z=16')
+    await page.evaluate(() => window.localStorage.removeItem('holston-scout/build-fit/v1'))
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    // Make sure the name is blank by explicitly clearing it.
+    const nameInput = page.locator('[data-testid="fit-form-name"]:visible')
+    await expect(nameInput).toBeVisible({ timeout: 8000 })
+    await nameInput.fill('')
+
+    // Switch to Fit tab on mobile so the Save placement button is reachable.
+    const fitTab = page.getByRole('tab', { name: 'Fit' })
+    if ((await fitTab.count()) > 0 && (await fitTab.isVisible())) {
+      await fitTab.click()
+    }
+
+    await page
+      .getByRole('button', { name: /^Save placement$/i })
+      .filter({ visible: true })
+      .click()
+
+    await expect(page.locator('[data-project-notice]:visible')).toContainText(/Name the footprint/i)
+  })
+
+  test('Phase 5: print stylesheet promotes the fit-report target', async ({ page }) => {
+    // Verify the always-mounted FitReport gets `display: block` under
+    // @media print and that the workspace panels (top bar, side panels)
+    // are hidden. We don't actually trigger the print dialog (Playwright
+    // can't dismiss it cross-browser); emulateMedia is the standard seam.
+    await page.goto('/?lng=-82.3534&lat=36.3134&z=16')
+    await page.evaluate(() => window.localStorage.removeItem('holston-scout/build-fit/v1'))
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    // On screen, the report is hidden.
+    const report = page.locator('[data-print-target="fit-report"]')
+    await expect(report).toHaveCount(1)
+    await expect(report).toBeHidden()
+
+    // Emulate print media. The report should become visible; the workspace
+    // top bar (a non-print-target direct child) should be hidden by the
+    // [data-fit-workspace] > *:not([data-print-target]) rule.
+    await page.emulateMedia({ media: 'print' })
+    await expect.poll(async () => report.evaluate((el) => getComputedStyle(el).display)).toBe('block')
+    // Assert the top-bar wrapper (first direct child of the workspace) is
+    // display:none. getComputedStyle on the button itself would still read
+    // inline-flex even when its ancestor is hidden.
+    const topBar = page.locator('[data-fit-workspace] > div').first()
+    await expect.poll(async () => topBar.evaluate((el) => getComputedStyle(el).display)).toBe('none')
+
+    // Sanity: the report contains the section headers and the disclaimer.
+    await expect(report.getByRole('heading', { name: /Holston Scout — Building Fit Report/i })).toBeVisible()
+    await expect(report.getByRole('heading', { name: /Parcel/i })).toBeVisible()
+    await expect(report.getByRole('heading', { name: /Footprint/i })).toBeVisible()
+    await expect(report).toContainText(/Planning estimate only/)
+
+    // Reset print emulation so subsequent tests in the same worker aren't
+    // affected (Playwright shares the page across describe-block tests).
+    await page.emulateMedia({ media: 'screen' })
+  })
+
   test('Tools popover still works after entering and exiting fit mode', async ({ page }) => {
     await loadParcelsAt(page, -82.3534, 36.3134, 16)
     await clickFirstParcel(page)

@@ -14,9 +14,9 @@
 //   Unmount       clear fit sources (layers stay installed for re-entry)
 //   Parcel clear  ParcelMap closes us via onClose
 //
-// What this file does NOT do (Phase 5+):
-//   No print/PDF report (Phase 5).
-//   No Send-to-Builder (much later).
+// What this file does NOT do yet:
+//   No Send-to-Builder integration (much later).
+//   No live-map-in-report (Phase 5 ships SVG geometry-only; see FitReport.tsx).
 
 // 10 MB cap on imported files. Any legitimate Holston Scout export is
 // well under this (a maxed-out 10k-footprint library is ~5MB even with
@@ -75,9 +75,11 @@ import {
   triggerDownload,
   readFileAsText,
 } from '@/lib/build-fit/project-file'
+import { formatFitSummary } from '@/lib/build-fit/report'
 import { FootprintLibrary } from './FootprintLibrary'
 import { FootprintForm, type FootprintFormValues } from './FootprintForm'
 import { FitResultPanel, type FitResultDisplay } from './FitResultPanel'
+import { FitReport } from './FitReport'
 
 interface BuildFitWorkspaceProps {
   /** Real maplibregl.Map. Day 4 drag handles need `on/off/getCanvasContainer`,
@@ -159,6 +161,11 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
   // so the pattern stays out of react-hooks/set-state-in-effect.
   const [placementSavedAt, setPlacementSavedAt] = useState<number | null>(null)
   const savedFlashTimeoutRef = useRef<number | null>(null)
+
+  // Phase 5 Copy summary flash. Same timeout-from-handler pattern as the
+  // Save Placement flash above.
+  const [copiedAt, setCopiedAt] = useState<number | null>(null)
+  const copiedFlashTimeoutRef = useRef<number | null>(null)
 
   // Phase 4 export/import. Inline notice for both: success and error
   // share the same notice slot, cleared via timeout from the handler.
@@ -486,6 +493,75 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
 
   const onResetCenter = useCallback(() => setUserCenter(null), [])
 
+  // ── Phase 5: print + copy summary handlers ──────────────────────────────
+  // The FitReport markup is always mounted (gated by `hidden print:block`)
+  // so window.print() works synchronously without a React commit pass.
+  const onPrintReport = useCallback(() => {
+    if (!computed.footprintGeom) return
+    if (typeof window !== 'undefined') window.print()
+  }, [computed.footprintGeom])
+
+  const summarySource = useMemo(() => {
+    if (!draftValues || !computed.footprintGeom) return null
+    const p = parcel.properties
+    return {
+      parcel: {
+        parcelKey: p.GISLINK ?? null,
+        owner: p.OWNER ?? null,
+        address: p.ADDRESS ?? null,
+        county: p.COUNTYNAME ?? null,
+        acres: p.CALC_ACRE ?? null,
+        zoning: p.ZONING ?? null,
+        appraisalDollars: p.APPRAISAL ?? null,
+      },
+      footprint: {
+        name: draftValues.name.trim() || '(unnamed)',
+        widthFt: draftValues.widthFt,
+        lengthFt: draftValues.lengthFt,
+        rotationDeg: draftValues.rotationDeg,
+        stories: draftValues.stories,
+        notes: draftValues.notes,
+      },
+      center: computed.center,
+      setback: setbackConfig,
+      envelopeSqft: computed.result.envelopeSqft,
+      result: computed.result,
+    }
+  }, [draftValues, computed, parcel.properties, setbackConfig])
+
+  const onCopySummary = useCallback(async () => {
+    if (!summarySource) return
+    const text = formatFitSummary({
+      ...summarySource,
+      generatedAt: new Date().toISOString(),
+    })
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedAt(Date.now())
+      if (copiedFlashTimeoutRef.current != null) {
+        window.clearTimeout(copiedFlashTimeoutRef.current)
+      }
+      copiedFlashTimeoutRef.current = window.setTimeout(() => {
+        setCopiedAt(null)
+        copiedFlashTimeoutRef.current = null
+      }, 1500)
+    } catch {
+      flashProjectNotice(
+        'err',
+        "Couldn't write to clipboard. Print the report and copy text manually.",
+      )
+    }
+  }, [summarySource, flashProjectNotice])
+
+  // Clean up the copied-flash timeout on unmount alongside the saved-flash one.
+  useEffect(() => {
+    return () => {
+      if (copiedFlashTimeoutRef.current != null) {
+        window.clearTimeout(copiedFlashTimeoutRef.current)
+      }
+    }
+  }, [])
+
   // ── Form handlers ─────────────────────────────────────────────────────────
   const onChange = useCallback((next: FootprintFormValues) => {
     setDraftValues(next)
@@ -518,7 +594,12 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       }
       const r = upsertFootprint(project)
       if (!r.ok) {
-        flashProjectNotice('err', 'Browser storage rejected the write. Free up site storage and try again.')
+        flashProjectNotice(
+          'err',
+          r.reason === 'validation'
+            ? 'Footprint failed validation. Check dimensions, stories, and notes.'
+            : 'Browser storage rejected the write. Free up site storage and try again.',
+        )
         return
       }
       selectFootprint(id)
@@ -528,11 +609,15 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
 
   const onDelete = useCallback(() => {
     if (!currentProject) return
-    removeFootprint(currentProject.id)
+    const r = removeFootprint(currentProject.id)
+    if (!r.ok) {
+      flashProjectNotice('err', 'Browser storage rejected the delete. Free up site storage and try again.')
+      return
+    }
     selectFootprint(null)
     setDraftValues(null)
     updateFitLayers(asFitTarget(map), { footprint: null })
-  }, [currentProject, map, selectFootprint])
+  }, [currentProject, map, selectFootprint, flashProjectNotice])
 
   const onNew = useCallback(() => {
     selectFootprint('NEW')
@@ -546,7 +631,13 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
   const onSavePlacement = useCallback(() => {
     if (!computed.footprintGeom || !computed.center || !validated.ok || !draftValues) return
     if (draftValues.widthFt < 1 || draftValues.lengthFt < 1) return
-    if (!draftValues.name.trim()) return // need a name to label the auto-saved template
+    if (!draftValues.name.trim()) {
+      // Save Placement auto-saves the footprint template if one doesn't
+      // exist; the template requires a name. Surface that as a notice
+      // instead of silently no-opping (audit finding).
+      flashProjectNotice('err', 'Name the footprint before saving the placement.')
+      return
+    }
 
     const now = new Date().toISOString()
 
@@ -571,7 +662,12 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       }
       const r = upsertFootprint(project)
       if (!r.ok) {
-        flashProjectNotice('err', 'Browser storage rejected the footprint write. Free up site storage and try again.')
+        flashProjectNotice(
+          'err',
+          r.reason === 'validation'
+            ? 'Footprint failed validation. Check dimensions, stories, and notes.'
+            : 'Browser storage rejected the footprint write. Free up site storage and try again.',
+        )
         return
       }
       selectFootprint(footprintProjectId)
@@ -631,7 +727,12 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
     }
     const r = upsertSession(session)
     if (!r.ok) {
-      flashProjectNotice('err', 'Browser storage rejected the placement write. Free up site storage and try again.')
+      flashProjectNotice(
+        'err',
+        r.reason === 'validation'
+          ? 'Placement failed validation. Check the footprint and parcel geometry.'
+          : 'Browser storage rejected the placement write. Free up site storage and try again.',
+      )
       return
     }
     setPlacementSavedAt(Date.now())
@@ -652,8 +753,6 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       }
     }
   }, [])
-
-
   // Mobile-only tab. Desktop renders both panels side-by-side; mobile shows
   // one at a time inside a bottom sheet so the map stays visible above.
   const [mobileTab, setMobileTab] = useState<'footprint' | 'fit'>('footprint')
@@ -805,8 +904,37 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
           savedFlash={placementSavedAt != null}
           setbackConfig={setbackConfig}
           onSetbackConfigChange={setSetbackConfig}
+          onPrintReport={onPrintReport}
+          onCopySummary={onCopySummary}
+          copiedFlash={copiedAt != null}
         />
       </div>
+
+      {/* Phase 5: print-only fit report. Always mounted while a footprint
+          is placed; hidden on screen (`hidden print:block`). The @media
+          print rule in src/index.css promotes any [data-print-target] to
+          the printed page, same selector as the parcel-detail handout. */}
+      {validated.ok && draftValues && computed.footprintGeom && (
+        <FitReport
+          parcel={parcel}
+          parcelGeom={validated.geom}
+          footprint={{
+            name: draftValues.name.trim() || '(unnamed)',
+            widthFt: draftValues.widthFt,
+            lengthFt: draftValues.lengthFt,
+            rotationDeg: draftValues.rotationDeg,
+            stories: draftValues.stories,
+            notes: draftValues.notes,
+          }}
+          footprintGeom={computed.footprintGeom}
+          center={computed.center}
+          result={computed.result}
+          setback={setbackConfig}
+          envelopeGeom={computed.envelope.geometry}
+          envelopeSqft={computed.result.envelopeSqft}
+          generatedAt={new Date().toISOString()}
+        />
+      )}
     </div>
   )
 }
@@ -835,4 +963,3 @@ function MobileTab({
     </button>
   )
 }
-
