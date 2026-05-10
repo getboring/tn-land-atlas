@@ -23,7 +23,7 @@ class of bug that has already been hunted down once. Don't.
 - **Live parcels:** Johnson City ArcGIS REST (`gis.johnsoncitytn.org`)
 - **Enriched data:** Supabase REST, **server-side only**
 - **Lint/format:** Biome is **not** used here — ESLint + typescript-eslint are
-- **Tests:** Playwright (~30 tests x 3 viewports for E2E, with a couple mobile-only) + Vitest (170+ unit tests across `src/lib/insights.ts`, `permalink.ts`, `lazyRetry.ts`, and the `src/lib/build-fit/` suite)
+- **Tests:** Playwright (37 tests x 3 viewports, one mobile-only skip on the other two -> ~109 effective runs) + Vitest (243 unit tests across `src/lib/insights.ts`, `permalink.ts`, `lazyRetry.ts`, and the full `src/lib/build-fit/` suite: schemas, storage, geometry, map-layers, project-file, report)
 
 This is a Cloudflare-Pages project, not a Workers/D1/Hono/better-auth project.
 Don't suggest migrating to a different shell.
@@ -196,7 +196,7 @@ the FilterSheet UI.
   what makes investigations sharable.
 
 ### 19. Tests must stay green before claiming done
-- `npm test` (vitest), 170+ unit tests across `src/lib/{insights,permalink,lazyRetry,build-fit}.ts` plus `ownerSearchTerm`
+- `npm test` (vitest), 243 unit tests across `src/lib/{insights,permalink,lazyRetry}.ts` and the full `src/lib/build-fit/` suite
 - `npm run build` — `tsc -b` over app + node + functions project refs
 - `npx eslint .` — zero issues
 - `BASE_URL=<prod> npx playwright test` — ~33 E2E tests across 3 viewports (with a couple mobile-only), ~97 effective runs

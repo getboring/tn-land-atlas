@@ -30,8 +30,8 @@ Live: <https://tn-land-atlas.pages.dev>
 - ArcGIS REST (Johnson City) for live parcel polygons
 - Supabase REST for enriched data — server-side only via Pages Functions
 - Cloudflare Pages + Pages Functions
-- Playwright for E2E (~30 tests across 3 viewports, ~85 effective runs after mobile-only skips), Vitest for unit tests across
-  `src/lib/{insights,permalink,lazyRetry}.ts` and the `src/lib/build-fit/` suite (170+ cases)
+- Playwright for E2E (37 tests across 3 viewports, ~109 effective runs after one mobile-only skip), Vitest for unit tests across
+  `src/lib/{insights,permalink,lazyRetry}.ts` and the full `src/lib/build-fit/` suite (243 cases)
 
 ## Quick start
 
@@ -164,7 +164,7 @@ load the latest hashed bundle.
 ## Testing
 
 ```bash
-npm test                                                  # vitest, 170+ cases (insights, permalink, lazyRetry, ownerSearchTerm, build-fit)
+npm test                                                  # vitest, 243 cases (insights, permalink, lazyRetry, build-fit)
 npm run lint                                              # eslint
 npm run build                                             # tsc -b + vite build
 npm run test:e2e                                          # Playwright via 'wrangler pages dev' locally
@@ -222,7 +222,7 @@ src/
     arcgis.ts           ParcelProperties / ParcelFeature / ParcelCollection types
     draw.ts             Terra Draw lifecycle helpers + haversine ruler
     insights.ts         pure indicator functions (price/ac, holding-yrs, entity, ...)
-    insights.test.ts    vitest cases for the parcel-side helpers (170+ total across all suites)
+    insights.test.ts    vitest cases for the parcel-side helpers (243 total across all suites)
     lazyRetry.ts        dynamic-import wrapper with one-shot reload (stale-chunk recovery)
     permalink.ts        URL <-> { view, parcelKey } (replaceState only)
     supabase-queries.ts enriched-data type definitions (no runtime client)

@@ -2,9 +2,9 @@ import type { ReactNode } from 'react'
 import { SurveyCornerMark } from './SurveyCornerMark'
 
 interface HolstonChromeProps {
-  /** Slot for search bar (future Phase 5) */
+  /** Slot reserved for a future global search bar (not currently wired). */
   centerSlot?: ReactNode
-  /** Slot for auth button (future Phase G) */
+  /** Slot reserved for a future auth button (not currently wired). */
   rightSlot?: ReactNode
   children: ReactNode
 }

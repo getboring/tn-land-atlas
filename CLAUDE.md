@@ -15,8 +15,8 @@ the user-facing brand is **Holston Scout**.)
 - ArcGIS REST (Johnson City) for live parcel polygons
 - Supabase REST for enriched data — server-side only via Pages Functions
 - Cloudflare Pages + Pages Functions
-- Playwright (~30 tests x 3 viewports with a couple mobile-only skips, ~85 effective runs) for E2E
-- Vitest (170+ cases) across `src/lib/{insights,permalink,lazyRetry,build-fit}.ts` and `ownerSearchTerm`
+- Playwright E2E: 37 tests across 3 viewports (chromium-desktop / chromium-tablet / chromium-mobile), one mobile-only skip on the other two -> ~109 effective runs
+- Vitest: 243 cases across `src/lib/{insights,permalink,lazyRetry}.ts` and the `src/lib/build-fit/` suite (`schemas`, `storage`, `geometry`, `map-layers`, `project-file`, `report`)
 
 ## Live
 - Prod: https://tn-land-atlas.pages.dev
@@ -54,20 +54,52 @@ src/
     HolstonChrome.tsx        top chrome — wordmark + Survey Corner mark + slots
     SurveyCornerMark.tsx     geometric brand mark, three lockups
     ParcelMap.tsx            main map, search, detail panel, bottom action bar,
-                             Tools popover, FilterSheet, ParcelInsights
+                             Tools popover, FilterSheet, ParcelInsights;
+                             gates the Test Building Fit CTA
     MapLoadingShell.tsx      graduated 4-stage loading shell
     MapErrorFallback.tsx     branded error UI (used by react-error-boundary)
+    build-fit/               # Phases 1-5 complete (see projects/buildplan2.md)
+      BuildFitWorkspace.tsx  fit-mode shell, lazy-loaded; installs fit-* layers,
+                             owns placement state, exports/imports project files,
+                             mounts FitReport for print
+      FootprintLibrary.tsx   list of saved footprint templates + New action
+      FootprintForm.tsx      typed-dimension form (name, w, l, rotation, stories,
+                             notes); inputs honor schema caps via MAX_* exports
+      FitResultPanel.tsx     fit status + warnings + metrics + setback config
+                             + Save placement / Print / Copy summary actions
+      FitReport.tsx          print-only handout ([data-print-target="fit-report"])
+                             with parcel + footprint + setback + SVG geometry diagram
     ui/{button,card}.tsx     shadcn-style primitives
   lib/
     api.ts                   typed fetch for /api/*
     arcgis.ts                ParcelProperties / ParcelFeature / ParcelCollection
+                             (ParcelGeometry = Polygon | MultiPolygon)
     draw.ts                  Terra Draw lifecycle helpers, haversine ruler
     insights.ts              pure indicator functions ($/ac, holding, entity, ...)
-    insights.test.ts         insights cases (170+ total across all vitest suites including build-fit)
+    insights.test.ts         insights cases (vitest)
     lazyRetry.ts             dynamic-import wrapper with one-shot reload
     permalink.ts             URL <-> { view, parcelKey } via replaceState
+    storage.ts               saved + recent parcels (separate key from build-fit)
     supabase-queries.ts      enriched-data types (no runtime client)
     utils.ts                 cn(), fmtMoney() (handles 0), fmtDate() (handles NaN)
+    build-fit/               Module-scoped Phase 5 surface
+      schemas.ts             Zod schemas + inferred TS types; exports MAX_DIM_FT,
+                             MAX_FOOTPRINT_NAME_CHARS, MAX_STORIES,
+                             MAX_NOTES_CHARS, MAX_AREA_SQFT
+      storage.ts             localStorage layer; all writes return
+                             { ok: true, store } | { ok: false, reason: 'validation' | 'storage' };
+                             replaceStore() for atomic full-store writes
+      geometry.ts            Turf-backed rectangleFromDimensions, fitsWithinParcel,
+                             closestBoundaryFt, setbackEnvelope, footprintLabels
+      map-layers.ts          fit-* MapLibre source/layer install/update/clear
+                             (fit-envelope, fit-footprint, fit-footprint-outline,
+                             fit-footprint-handles, fit-conflicts, fit-labels,
+                             fit-setback-lines)
+      project-file.ts        Portable .hscout.json export/import; importProjectFile
+                             does one atomic replaceStore (no partial writes)
+      report.ts              Phase 5 pure helpers: formatFitSummary (clipboard
+                             payload), parcelDiagramData (SVG path strings),
+                             formatLatLon (hemisphere suffixes, not signed °E)
   types/global.d.ts          window.__map__ for E2E
 functions/api/
   _validate.ts               county / bbox / query / polygon whitelists
@@ -75,7 +107,8 @@ functions/api/
   parcel.ts                  GET  -> single feature by GISLINK (permalink resolver)
   search.ts                  POST -> ArcGIS LIKE on OWNER / ADDRESS / GISLINK
   property.ts                POST -> Supabase parallel reads (UUID-validated joins)
-e2e/map.spec.ts              ~30 tests across 3 viewports (with a couple mobile-only); ~85 effective runs after skips
+e2e/map.spec.ts              37 tests across 3 viewports (1 mobile-only skip on
+                             the other two) -> 109 effective runs
 ```
 
 ## Brand system (Holston Scout — converted to HolstonBuilder family)
@@ -158,6 +191,43 @@ test, then wiring into ParcelInsights.
 - Selecting / deselecting a parcel updates the URL.
 - Loading with `?parcel=<gislink>` resolves via `GET /api/parcel?key=...`
   and selects/flies-to in the resolution effect.
+
+### Build-Fit module (Phases 1-5 complete; Phase 6 not started)
+The "Test Building Fit" CTA in the parcel-detail panel mounts
+`BuildFitWorkspace` (lazy-loaded; ~440 kB chunk including Turf + Zod).
+Inside the workspace:
+
+- **Templates** live in `holston-scout/build-fit/v1` localStorage under
+  a schema-versioned envelope (`BuildFitStore`). Same-tab change events
+  fire on a custom `holston-scout:build-fit-storage` event; React reads
+  via `useSyncExternalStore` so writes refresh subscribers without a
+  manual invalidation.
+- **Writes never throw.** `upsertFootprint`, `upsertSession`,
+  `removeFootprint`, `removeSession`, `clearAll`, and `replaceStore`
+  all return `{ ok: true, store } | { ok: false, reason: 'validation' | 'storage' }`.
+  UI surfaces failures via the inline `data-project-notice` slot; do
+  not silently no-op a failed write.
+- **Fit math is geodesic.** `geometry.ts` runs Turf's `area`,
+  `destination`, `pointToLineDistance`, `buffer` for setback envelopes
+  on the sphere model — sub-foot accurate at TN latitudes for building-
+  scale geometry. Distances/areas surface in feet / sqft; internal
+  geometry is always GeoJSON [lng, lat].
+- **Map layers** all share the `fit-*` prefix (rule #5 in
+  `projects/buildplan2.md`). Install/update/clear go through
+  `map-layers.ts` so the workspace never directly touches the map
+  style. The `FitMapTarget` interface narrows the seam for testability.
+- **Project file (.hscout.json)** ships with an app-version envelope,
+  a frozen disclaimer, and the entire `BuildFitStore` as `data`.
+  Import is atomic: validate -> merge with existing store -> single
+  `replaceStore` write. No partial writes.
+- **Phase 5 print/report.** `FitReport` renders a `[data-print-target="fit-report"]`
+  block (parcel header + footprint dimensions + setback + fit result +
+  SVG geometry diagram + disclaimer), hidden on screen via
+  `hidden print:block`, promoted by `@media print` in `index.css`.
+  The Copy summary action writes the same content as plain text to
+  the clipboard via `formatFitSummary`. Map-in-report (live tile
+  capture) is deferred; SVG geometry-only is the MVP per
+  `buildplan2.md` Phase 5 option 2.
 
 ### API hygiene
 - `lib/api.ts` calls `/api/*` only — no client-side Supabase fallback.
