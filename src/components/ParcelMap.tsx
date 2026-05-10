@@ -193,6 +193,7 @@ export default function ParcelMap() {
   const drawRef = useRef<TerraDraw | null>(null)
   const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const enrichRequestRef = useRef(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [searchFocused, setSearchFocused] = useState(false)
   // Last-loaded full feature collection from the API. Filters operate on this
@@ -608,6 +609,7 @@ export default function ParcelMap() {
     const src = m.getSource('parcels') as maplibregl.GeoJSONSource | undefined
     const zoom = m.getZoom()
     if (zoom < 13) {
+      rawParcelsRef.current = null
       src?.setData({ type: 'FeatureCollection', features: [] })
       setParcelCount(0)
       return
@@ -633,7 +635,9 @@ export default function ParcelMap() {
   }, [])
 
   const selectParcel = useCallback(async (f: ParcelFeature, m: maplibregl.Map) => {
+    const enrichRequestId = ++enrichRequestRef.current
     setSelectedParcel(f)
+    setEnriched(null)
     // Detail and search-results live in the same right-side slot. Picking a
     // parcel — from the map or from a result list — closes the list so the
     // detail panel can take over without overlap.
@@ -672,8 +676,8 @@ export default function ParcelMap() {
     })
 
     // Recent-parcels memory. Persists in localStorage so the user can come
-    // back tomorrow and find what they were looking at. When auth lands this
-    // history migrates to D1 on first login (see src/lib/storage.ts).
+    // back tomorrow and find what they were looking at. When account-backed
+    // collections or Builder handoff lands, this becomes migration input.
     if (gislink) {
       pushRecent(gislink, {
         owner: f.properties.OWNER ?? null,
@@ -683,17 +687,18 @@ export default function ParcelMap() {
 
     if (!gislink) {
       setEnriched(null)
+      setEnrichLoading(false)
       return
     }
     setEnrichLoading(true)
     try {
       const data = await getPropertyData(gislink)
-      setEnriched(data)
+      if (enrichRequestId === enrichRequestRef.current) setEnriched(data)
     } catch (e) {
       console.error('[property] enrichment failed', e)
-      setEnriched(null)
+      if (enrichRequestId === enrichRequestRef.current) setEnriched(null)
     } finally {
-      setEnrichLoading(false)
+      if (enrichRequestId === enrichRequestRef.current) setEnrichLoading(false)
     }
   }, [])
 
@@ -766,8 +771,10 @@ export default function ParcelMap() {
   }, [drawMode])
 
   const clearSelection = () => {
+    enrichRequestRef.current += 1
     setSelectedParcel(null)
     setEnriched(null)
+    setEnrichLoading(false)
     const m = map.current
     if (m?.getLayer('parcels-selected')) {
       m.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], NO_SELECTION])
@@ -969,7 +976,7 @@ export default function ParcelMap() {
                 type="button"
                 onClick={clearSearch}
                 aria-label="Clear search"
-                className="absolute right-1 top-1 inline-flex items-center justify-center w-8 h-8 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
+                className="absolute right-0 top-0 inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1241,7 +1248,7 @@ export default function ParcelMap() {
               <button
                 onClick={closeSearchResults}
                 aria-label="Close search results"
-                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
+                className="inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1726,7 +1733,7 @@ function ParcelActions({
           href={googleMapsUrl(c[0], c[1])}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
+          className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
         >
           <MapIcon className="w-3.5 h-3.5" /> Maps
         </a>
@@ -1736,7 +1743,7 @@ function ParcelActions({
           href={googleStreetViewUrl(c[0], c[1])}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
+          className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
         >
           <Eye className="w-3.5 h-3.5" /> Street View
         </a>
@@ -1746,7 +1753,7 @@ function ParcelActions({
           href={appleMapsUrl(c[0], c[1], p.ADDRESS ?? undefined)}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
+          className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
         >
           Apple
         </a>
@@ -1756,7 +1763,7 @@ function ParcelActions({
           type="button"
           onClick={copyAddress}
           aria-label={copiedAddr ? 'Address copied' : 'Copy address to clipboard'}
-          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
+          className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10"
         >
           {copiedAddr ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
           {copiedAddr ? 'Copied' : 'Copy address'}
@@ -1766,7 +1773,7 @@ function ParcelActions({
         type="button"
         onClick={() => window.print()}
         aria-label="Print this parcel"
-        className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10 print:hidden"
+        className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10 print:hidden"
       >
         <Printer className="w-3.5 h-3.5" /> Print
       </button>
@@ -1774,7 +1781,7 @@ function ParcelActions({
         <button
           type="button"
           onClick={() => onSearchOwner(ownerForSearch)}
-          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-[11px] font-medium bg-brand/20 text-white border border-brand/40 hover:bg-brand/30"
+          className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-[11px] font-medium bg-brand/20 text-white border border-brand/40 hover:bg-brand/30"
         >
           <Users className="w-3.5 h-3.5" /> More by {ownerForSearch}
         </button>
@@ -1817,7 +1824,7 @@ function RecentParcelsPill({ onPick }: { onPick: (gislink: string) => void }) {
         aria-expanded={open}
         aria-label={`Recent parcels (${recents.length})`}
         className={cn(
-          'inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[11px] font-medium uppercase tracking-wider border transition-colors',
+          'inline-flex items-center gap-1.5 h-10 px-3 rounded-full text-[11px] font-medium uppercase tracking-wider border transition-colors',
           open
             ? 'bg-brand text-white border-brand'
             : 'bg-surface/90 backdrop-blur text-text-primary border-border-default hover:bg-white/10',
@@ -1839,7 +1846,7 @@ function RecentParcelsPill({ onPick }: { onPick: (gislink: string) => void }) {
             <button
               onClick={() => setOpen(false)}
               aria-label="Close recent list"
-              className="inline-flex items-center justify-center w-8 h-8 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
             >
               <X className="w-4 h-4" />
             </button>
@@ -2018,8 +2025,8 @@ function SearchSuggestions({
 }
 
 // SaveButton — toggles a parcel's saved state in localStorage. Same UI/UX
-// pre- and post-auth: when auth lands, the underlying storage layer swaps
-// to D1 without any change here.
+// pre- and post-auth: when auth lands, the underlying storage layer can swap
+// to account-backed collections without any change here.
 function SaveButton({ gislink }: { gislink: string | null | undefined }) {
   const saved = useIsSaved(gislink)
   if (!gislink) return null
@@ -2169,4 +2176,3 @@ function ActionBarButton({
     </button>
   )
 }
-

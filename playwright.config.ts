@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const baseURL = process.env.BASE_URL || 'http://localhost:5180'
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -9,7 +11,7 @@ export default defineConfig({
   reporter: 'html',
   use: {
     trace: 'on-first-retry',
-    baseURL: process.env.BASE_URL || 'http://localhost:5180',
+    baseURL,
     ignoreHTTPSErrors: true,
   },
 
@@ -28,9 +30,11 @@ export default defineConfig({
     },
   ],
 
-  webServer: {
-    command: 'npx vite --port 5180',
-    url: 'http://localhost:5180',
-    reuseExistingServer: false,
-  },
+  webServer: process.env.BASE_URL
+    ? undefined
+    : {
+        command: 'npm run build && npx wrangler pages dev dist --port 5180 --ip 127.0.0.1 --log-level error',
+        url: baseURL,
+        reuseExistingServer: !process.env.CI,
+      },
 })

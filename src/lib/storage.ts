@@ -1,14 +1,14 @@
 // localStorage layer for Holston Scout.
 //
 // Forward-compatibility contract:
-//   When auth lands (Phase 1 of the retention plan), the user's first login
-//   will POST this entire payload to `/api/auth/migrate` so their pre-auth
-//   history transfers to D1. Don't change the field shapes without bumping
-//   `schemaVersion` and writing a migrate() branch.
+//   When account-backed collections or Builder handoff lands, the user's first
+//   login can migrate this entire payload so their pre-auth history is not
+//   lost. Don't change the field shapes without bumping `schemaVersion` and
+//   writing a migrate() branch.
 //
-//   Field names mirror the eventual D1 schema 1:1:
+//   Field names mirror the likely durable storage shape:
 //     saved_parcels(user_id, gislink, saved_at, note, tags[])
-//     recent_views(user_id, gislink, viewed_at)
+//     recent_views(user_id, gislink, viewed_at, owner, address)
 //
 // Privacy: all data stays in the user's browser until they explicitly sign
 // in. Don't add anything here that wouldn't be okay to leave in localStorage
@@ -75,7 +75,7 @@ function writeRaw(s: StorageV1): void {
     // 'storage' event only fires across tabs, not within the writing tab.
     window.dispatchEvent(new CustomEvent('holston-scout:storage'))
   } catch {
-    // Ignore — we're not authoritative storage; D1 is, eventually.
+    // Ignore. This is convenience storage, not the authoritative record.
   }
 }
 
