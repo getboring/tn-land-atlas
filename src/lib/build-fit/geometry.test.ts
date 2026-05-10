@@ -8,6 +8,7 @@ import {
   closestBoundaryFt,
   normalizeParcel,
   defaultFootprintCenter,
+  footprintLabels,
   FEET_PER_METER,
   SQM_TO_SQFT,
 } from './geometry'
@@ -293,6 +294,57 @@ describe('normalizeParcel', () => {
     const out = normalizeParcel(multi)
     expect(out.warning).not.toBeNull()
     expect(out.largest.coordinates).toEqual(big)
+  })
+})
+
+describe('footprintLabels', () => {
+  const baseRect = rectangleFromDimensions({
+    center: TN_CENTER,
+    widthFt: 40,
+    lengthFt: 60,
+    rotationDeg: 0,
+  })
+
+  it('returns exactly 3 features (width, length, area)', () => {
+    const labels = footprintLabels({ footprint: baseRect, widthFt: 40, lengthFt: 60 })
+    expect(labels).toHaveLength(3)
+    for (const f of labels) expect(f.geometry.type).toBe('Point')
+  })
+
+  it('label strings are deterministic for the same input', () => {
+    const a = footprintLabels({ footprint: baseRect, widthFt: 40, lengthFt: 60 })
+    const b = footprintLabels({ footprint: baseRect, widthFt: 40, lengthFt: 60 })
+    expect(a.map((f) => f.properties?.label)).toEqual(b.map((f) => f.properties?.label))
+  })
+
+  it('label texts include the typed dimensions and area', () => {
+    const labels = footprintLabels({ footprint: baseRect, widthFt: 40, lengthFt: 60 })
+    const texts = labels.map((f) => f.properties?.label as string)
+    expect(texts).toContain('40 ft')
+    expect(texts).toContain('60 ft')
+    expect(texts).toContain('2,400 sqft')
+  })
+
+  it('formats fractional dimensions to one decimal', () => {
+    const labels = footprintLabels({ footprint: baseRect, widthFt: 40.5, lengthFt: 60 })
+    const texts = labels.map((f) => f.properties?.label as string)
+    expect(texts.some((t) => t === '40.5 ft')).toBe(true)
+  })
+
+  it('points sit roughly at expected places (within ~0.0005 deg)', () => {
+    const labels = footprintLabels({ footprint: baseRect, widthFt: 40, lengthFt: 60 })
+    // Width-edge midpoint: same lng as center, lat shift toward north OR south
+    // depending on which edge the helper chose. Length-edge midpoint:
+    // shifted in lng. Center label: at the rectangle centroid.
+    const center = labels.find((f) => (f.properties?.label as string).includes('sqft'))
+    expect(center).toBeDefined()
+    expect(Math.abs(center!.geometry.coordinates[0]! - TN_CENTER[0])).toBeLessThan(0.0005)
+    expect(Math.abs(center!.geometry.coordinates[1]! - TN_CENTER[1])).toBeLessThan(0.0005)
+  })
+
+  it('returns an empty array on a malformed footprint', () => {
+    const empty: typeof baseRect = { type: 'Polygon', coordinates: [[]] }
+    expect(footprintLabels({ footprint: empty, widthFt: 40, lengthFt: 60 })).toEqual([])
   })
 })
 

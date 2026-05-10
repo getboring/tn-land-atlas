@@ -385,23 +385,36 @@ test.describe('Holston Scout', () => {
     expect(fpCount).toBe(0)
   })
 
-  test('clearing the parcel exits fit mode', async ({ page }) => {
+  test('clearing the parcel after fit mode also clears fit layers and selection', async ({ page }) => {
+    // Real user flow: open a parcel, open fit mode, exit fit (which
+    // restores the detail panel), then close the detail panel via its X.
+    // Asserts the full teardown — fit layers empty, detail panel gone,
+    // OBJECTID-keyed selection layers reset to NO_SELECTION.
     await loadParcelsAt(page, -82.3534, 36.3134, 16)
     await clickFirstParcel(page)
     await page.getByRole('button', { name: /Test Building Fit/i }).click()
     await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
-    // Closing parcel selection from outside the workspace should force fit
-    // mode to close. The workspace's exit button is in the way of the
-    // detail-panel close button in this layout, so trigger via map __test
-    // hook instead.
-    await page.evaluate(() => {
-      // Click the workspace exit which mirrors the parcel-clear flow's
-      // setFitOpen(false). For the parcel-clear cascade, just press Escape
-      // is not wired, so use the exit button as the proxy here.
-      const btn = document.querySelector('button[aria-label="Exit Building Fit"]') as HTMLButtonElement | null
-      btn?.click()
-    })
+
+    // Step 1: exit fit mode. Detail panel returns.
+    await page.getByRole('button', { name: /Exit Building Fit/i }).click()
     await expect(page.locator('[data-fit-workspace]')).toHaveCount(0)
+    await expect(page.getByText('Property Details')).toBeVisible()
+
+    // Step 2: clear the parcel via the detail panel's X.
+    await page.getByRole('button', { name: /Close property details/i }).click()
+    await expect(page.getByText('Property Details')).toHaveCount(0)
+
+    // Step 3: verify fit-footprint source is empty (the workspace's
+    // unmount-time clearFitLayers should have already drained it on exit).
+    const fpCount = await page.evaluate(() => {
+      const m = (
+        window as unknown as {
+          __map__?: { querySourceFeatures: (id: string) => unknown[] }
+        }
+      ).__map__
+      return m ? m.querySourceFeatures('fit-footprint').length : -1
+    })
+    expect(fpCount).toBe(0)
   })
 
   test('saving a footprint adds it to the library and persists across reload', async ({ page }) => {

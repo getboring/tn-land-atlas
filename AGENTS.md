@@ -23,7 +23,7 @@ class of bug that has already been hunted down once. Don't.
 - **Live parcels:** Johnson City ArcGIS REST (`gis.johnsoncitytn.org`)
 - **Enriched data:** Supabase REST, **server-side only**
 - **Lint/format:** Biome is **not** used here — ESLint + typescript-eslint are
-- **Tests:** Playwright (~50+ tests x 3 viewports for E2E) + Vitest (60+ unit tests across `src/lib/insights.ts`, `permalink.ts`, `lazyRetry.ts`)
+- **Tests:** Playwright (~30 tests x 3 viewports for E2E, with a couple mobile-only) + Vitest (170+ unit tests across `src/lib/insights.ts`, `permalink.ts`, `lazyRetry.ts`, and the `src/lib/build-fit/` suite)
 
 This is a Cloudflare-Pages project, not a Workers/D1/Hono/better-auth project.
 Don't suggest migrating to a different shell.

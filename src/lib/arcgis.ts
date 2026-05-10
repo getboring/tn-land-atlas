@@ -27,12 +27,19 @@ export interface ParcelProperties {
   LONGITUDE: number | null
 }
 
+// ArcGIS sometimes returns MultiPolygon parcels (split lots, parcels
+// straddling water, parts of a single recorded property). Carry the union
+// in the type so consumers narrow at use sites instead of trusting Polygon
+// and crashing on the field. Build-fit already validates at its workspace
+// boundary; the rest of the app (centroid, map filters, corner-node walk)
+// is being aligned to match.
+export type ParcelGeometry =
+  | { type: 'Polygon'; coordinates: number[][][] }
+  | { type: 'MultiPolygon'; coordinates: number[][][][] }
+
 export interface ParcelFeature {
   type: 'Feature'
-  geometry: {
-    type: 'Polygon'
-    coordinates: number[][][]
-  }
+  geometry: ParcelGeometry
   properties: ParcelProperties
 }
 

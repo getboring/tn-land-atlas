@@ -15,7 +15,7 @@ the user-facing brand is **Holston Scout**.)
 - ArcGIS REST (Johnson City) for live parcel polygons
 - Supabase REST for enriched data — server-side only via Pages Functions
 - Cloudflare Pages + Pages Functions
-- Playwright (63 tests x 3 viewports = 189 runs) for E2E
+- Playwright (~30 tests x 3 viewports with a couple mobile-only skips, ~85 effective runs) for E2E
 - Vitest (170+ cases) across `src/lib/{insights,permalink,lazyRetry,build-fit}.ts` and `ownerSearchTerm`
 
 ## Live
@@ -75,7 +75,7 @@ functions/api/
   parcel.ts                  GET  -> single feature by GISLINK (permalink resolver)
   search.ts                  POST -> ArcGIS LIKE on OWNER / ADDRESS / GISLINK
   property.ts                POST -> Supabase parallel reads (UUID-validated joins)
-e2e/map.spec.ts              63 tests across 3 viewports (189 runs)
+e2e/map.spec.ts              ~30 tests across 3 viewports (with a couple mobile-only); ~85 effective runs after skips
 ```
 
 ## Brand system (Holston Scout — converted to HolstonBuilder family)

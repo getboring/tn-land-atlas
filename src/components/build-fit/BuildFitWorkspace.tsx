@@ -50,6 +50,7 @@ import {
   closestBoundaryFt,
   normalizeParcel,
   defaultFootprintCenter,
+  footprintLabels,
 } from '@/lib/build-fit/geometry'
 import {
   useFootprints,
@@ -212,7 +213,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
 
   // ── Push computed footprint + center handle to the map ──────────────────
   useEffect(() => {
-    if (computed.footprintGeom && computed.center) {
+    if (computed.footprintGeom && computed.center && draftValues) {
       updateFitLayers(asFitTarget(map), {
         footprint: { geometry: computed.footprintGeom, valid: computed.result.fitsParcel ?? true },
         handles: {
@@ -225,11 +226,19 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
             },
           ],
         },
+        labels: {
+          type: 'FeatureCollection',
+          features: footprintLabels({
+            footprint: computed.footprintGeom,
+            widthFt: draftValues.widthFt,
+            lengthFt: draftValues.lengthFt,
+          }),
+        },
       })
     } else {
-      updateFitLayers(asFitTarget(map), { footprint: null, handles: null })
+      updateFitLayers(asFitTarget(map), { footprint: null, handles: null, labels: null })
     }
-  }, [map, computed])
+  }, [map, computed, draftValues])
 
   // ── Drag handle: move the footprint by dragging its center ──────────────
   // Real maplibregl events (not Terra Draw, which would clash with the
@@ -479,71 +488,76 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         </button>
       </div>
 
-      {/* Desktop (sm+): side panels, form on the left, result on the right,
-          map fills the gap. */}
-      <div className="hidden sm:flex pointer-events-auto absolute top-16 left-3 right-3 bottom-3 flex-row gap-3">
-        <div className="w-[300px] flex-none rounded-xl bg-surface/95 backdrop-blur border border-border-default p-3 space-y-3 overflow-y-auto brand-scroll">
-          <FootprintLibrary
-            footprints={footprints}
-            selectedId={selectedId}
-            onSelect={selectFootprint}
-            onNew={onNew}
-          />
-          <FootprintForm
-            // key remounts the form with fresh state when the user picks a
-            // different footprint, avoids a prop-sync effect.
-            key={currentProject?.id ?? 'new'}
-            initial={currentProject}
-            onChange={onChange}
-            onSave={onSave}
-            onDelete={currentProject ? onDelete : undefined}
-          />
-        </div>
-        <div className="flex-1" />
-        <div className="w-[320px] flex-none rounded-xl bg-surface/95 backdrop-blur border border-border-default p-3 overflow-y-auto brand-scroll">
-          <FitResultPanel result={computed.result} subtitle={computed.subtitle} onSavePlacement={onSavePlacement} onResetCenter={onResetCenter} centerOverridden={userCenter != null} savedFlash={placementSavedAt != null} />
-        </div>
+      {/* Mobile-only tab bar. Hidden at sm+; shown at <sm.
+          Tab state toggles VISIBILITY on the single-mounted panels below
+          via Tailwind classes, never unmounts them. So a switch from
+          Footprint to Fit doesn't reset transient form state. */}
+      <div
+        role="tablist"
+        aria-label="Building Fit panels"
+        className="sm:hidden pointer-events-auto absolute bottom-[60vh] left-0 right-0 flex bg-surface/95 backdrop-blur border-y border-border-subtle"
+      >
+        <MobileTab
+          label="Footprint"
+          active={mobileTab === 'footprint'}
+          onClick={() => setMobileTab('footprint')}
+        />
+        <MobileTab label="Fit" active={mobileTab === 'fit'} onClick={() => setMobileTab('fit')} />
       </div>
 
-      {/* Mobile (<sm): bottom sheet with two tabs. Map stays visible in the
-          top half of the screen so the user can pan around the parcel. The
-          host's bottom action bar is hidden while fitOpen, so the sheet has
-          the lower edge to itself. safe-bottom respects iOS home indicator. */}
-      <div className="sm:hidden pointer-events-auto absolute bottom-0 left-0 right-0 max-h-[60vh] flex flex-col rounded-t-2xl bg-surface/95 backdrop-blur border-t border-border-default safe-bottom">
-        <div role="tablist" aria-label="Building Fit panels" className="flex border-b border-border-subtle">
-          <MobileTab
-            label="Footprint"
-            active={mobileTab === 'footprint'}
-            onClick={() => setMobileTab('footprint')}
-          />
-          <MobileTab
-            label="Fit"
-            active={mobileTab === 'fit'}
-            onClick={() => setMobileTab('fit')}
-          />
-        </div>
-        <div className="flex-1 overflow-y-auto brand-scroll p-3">
-          {mobileTab === 'footprint' && (
-            <div className="space-y-3">
-              <FootprintLibrary
-                footprints={footprints}
-                selectedId={selectedId}
-                onSelect={selectFootprint}
-                onNew={onNew}
-              />
-              <FootprintForm
-                key={currentProject?.id ?? 'new'}
-                initial={currentProject}
-                onChange={onChange}
-                onSave={onSave}
-                onDelete={currentProject ? onDelete : undefined}
-              />
-            </div>
-          )}
-          {mobileTab === 'fit' && (
-            <FitResultPanel result={computed.result} subtitle={computed.subtitle} onSavePlacement={onSavePlacement} onResetCenter={onResetCenter} centerOverridden={userCenter != null} savedFlash={placementSavedAt != null} />
-          )}
-        </div>
+      {/* Footprint panel — single mount.
+          Desktop (sm+): fixed-width column on the left.
+          Mobile (<sm): bottom sheet, visible only when 'footprint' tab active. */}
+      <div
+        className={cn(
+          'pointer-events-auto absolute rounded-xl bg-surface/95 backdrop-blur border border-border-default p-3 space-y-3 overflow-y-auto brand-scroll',
+          // Desktop layout — wins on sm+ via the !sm:* utility chain.
+          'sm:w-[300px] sm:left-3 sm:top-16 sm:bottom-3',
+          // Mobile layout — bottom sheet under the tab bar.
+          'left-0 right-0 bottom-0 max-h-[60vh] rounded-b-none rounded-t-none border-x-0 border-b-0 sm:rounded-xl sm:border-x sm:border-b safe-bottom sm:safe-top-0',
+          // Mobile tab gating: hide via display:none when Fit tab is active.
+          // sm:!block forces visibility back on at desktop regardless of tab.
+          mobileTab === 'footprint' ? 'block' : 'hidden',
+          'sm:!block',
+        )}
+      >
+        <FootprintLibrary
+          footprints={footprints}
+          selectedId={selectedId}
+          onSelect={selectFootprint}
+          onNew={onNew}
+        />
+        <FootprintForm
+          // key remounts the form with fresh state when the user picks a
+          // different footprint, avoids a prop-sync effect.
+          key={currentProject?.id ?? 'new'}
+          initial={currentProject}
+          onChange={onChange}
+          onSave={onSave}
+          onDelete={currentProject ? onDelete : undefined}
+        />
+      </div>
+
+      {/* Fit result panel — single mount.
+          Desktop (sm+): fixed-width column on the right.
+          Mobile (<sm): bottom sheet, visible only when 'fit' tab active. */}
+      <div
+        className={cn(
+          'pointer-events-auto absolute rounded-xl bg-surface/95 backdrop-blur border border-border-default p-3 overflow-y-auto brand-scroll',
+          'sm:w-[320px] sm:right-3 sm:top-16 sm:bottom-3',
+          'left-0 right-0 bottom-0 max-h-[60vh] rounded-b-none rounded-t-none border-x-0 border-b-0 sm:rounded-xl sm:border-x sm:border-b safe-bottom',
+          mobileTab === 'fit' ? 'block' : 'hidden',
+          'sm:!block',
+        )}
+      >
+        <FitResultPanel
+          result={computed.result}
+          subtitle={computed.subtitle}
+          onSavePlacement={onSavePlacement}
+          onResetCenter={onResetCenter}
+          centerOverridden={userCenter != null}
+          savedFlash={placementSavedAt != null}
+        />
       </div>
     </div>
   )

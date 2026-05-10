@@ -207,5 +207,72 @@ export function normalizeParcel(geom: PolygonOrMulti): NormalizedParcel {
   }
 }
 
+// ── Footprint dimension labels ──────────────────────────────────────────
+// Pure function: given a typed-rectangle footprint and its dimensions,
+// produce three Point features for the fit-labels source — one near each
+// of the two distinguishable side midpoints (width axis + length axis)
+// plus an area label at the rectangle's center.
+//
+// Coordinate convention matches rectangleFromDimensions: ring order is
+// [NE, SE, SW, NW, NE] (close). So:
+//   ring[0] = NE   ring[1] = SE   ring[2] = SW   ring[3] = NW
+// The four edge midpoints are:
+//   N edge: midpoint(NE, NW)  -> length axis (the "north" face)
+//   E edge: midpoint(NE, SE)  -> width axis  (the "east" face)
+//   S edge: midpoint(SE, SW)  -> length axis (the "south" face)
+//   W edge: midpoint(NW, SW)  -> width axis  (the "west" face)
+// We label one width edge and one length edge (E and N) plus the centroid
+// for area. Labelling both width edges would be redundant.
+//
+// `properties.label` is what the fit-labels symbol layer reads via
+// ['get', 'label'] — see src/lib/build-fit/map-layers.ts.
+
+export interface FootprintLabelInput {
+  footprint: Polygon
+  widthFt: number
+  lengthFt: number
+}
+
+export function footprintLabels(input: FootprintLabelInput): GeoJSON.Feature<GeoJSON.Point>[] {
+  const ring = input.footprint.coordinates[0]
+  if (!ring || ring.length < 5) return []
+  const ne = ring[0]
+  const se = ring[1]
+  const sw = ring[2]
+  const nw = ring[3]
+  if (!ne || !se || !sw || !nw) return []
+
+  const midNorth = midpoint(ne, nw)
+  const midEast = midpoint(ne, se)
+  const center = midpoint(midpoint(ne, sw), midpoint(nw, se))
+
+  return [
+    pointFeature(midEast, `${formatFt(input.widthFt)} ft`),
+    pointFeature(midNorth, `${formatFt(input.lengthFt)} ft`),
+    pointFeature(center, `${formatSqft(input.widthFt * input.lengthFt)} sqft`),
+  ]
+}
+
+function midpoint(a: number[], b: number[]): [number, number] {
+  return [(a[0]! + b[0]!) / 2, (a[1]! + b[1]!) / 2]
+}
+
+function pointFeature(coords: [number, number], label: string): GeoJSON.Feature<GeoJSON.Point> {
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: coords },
+    properties: { label },
+  }
+}
+
+function formatFt(n: number): string {
+  // Whole feet for typed dimensions; one decimal if user typed a fraction.
+  return Number.isInteger(n) ? String(n) : n.toFixed(1)
+}
+
+function formatSqft(n: number): string {
+  return Math.round(n).toLocaleString()
+}
+
 // Re-exports so consumers don't need separate imports.
 export type { Polygon, MultiPolygon, PolygonOrMulti } from './schemas'

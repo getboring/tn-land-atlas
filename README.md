@@ -31,7 +31,7 @@ Live: <https://tn-land-atlas.pages.dev>
 - Supabase REST for enriched data — server-side only via Pages Functions
 - Cloudflare Pages + Pages Functions
 - Playwright for E2E (~50+ tests x 3 viewports), Vitest for unit tests across
-  `src/lib/{insights,permalink,lazyRetry}.ts` (60+ cases)
+  `src/lib/{insights,permalink,lazyRetry}.ts` and the `src/lib/build-fit/` suite (170+ cases)
 
 ## Quick start
 
