@@ -26,9 +26,8 @@ import {
   FootprintProjectSchema,
   FitSessionSchema,
   type BuildFitStore,
-  type FitSession,
 } from './schemas'
-import { upsertFootprint, upsertSession, getFootprints, getSessions } from './storage'
+import { getFootprints, getSessions, replaceStore } from './storage'
 
 // Bumped when the export shape changes. Independent of BuildFitStore's own
 // schemaVersion (an envelope around it). v1.0.0 = the shape below.
@@ -198,38 +197,46 @@ export function importProjectFile(text: string): ImportResult {
     }
   }
 
-  // All good, write. Each upsert can independently fail at the
-  // localStorage layer (quota, private mode, serialization). On any
-  // failure we surface a partial-write error so the caller can warn
-  // the user instead of falsely reporting success.
-  let writtenFootprints = 0
-  let writtenSessions = 0
+  const mergedStore: BuildFitStore = {
+    schemaVersion: 1,
+    footprints: [...getFootprints()],
+    sessions: [...getSessions()],
+    updatedAt: new Date().toISOString(),
+  }
+
   for (const fp of file.data.footprints) {
-    const r = upsertFootprint(fp)
-    if (!r.ok) {
-      return {
-        ok: false,
-        error: `Browser storage rejected the write after ${writtenFootprints} of ${file.data.footprints.length} footprints. Free up site storage and try again.`,
-      }
+    const existing = mergedStore.footprints.findIndex((existingFp) => existingFp.id === fp.id)
+    if (existing >= 0) {
+      mergedStore.footprints[existing] = fp
+    } else {
+      mergedStore.footprints.unshift(fp)
     }
-    writtenFootprints++
   }
   for (const sess of file.data.sessions) {
-    const r = upsertSession(sess as FitSession)
-    if (!r.ok) {
-      return {
-        ok: false,
-        error: `Browser storage rejected the write after ${writtenSessions} of ${file.data.sessions.length} sessions. Free up site storage and try again.`,
-      }
+    const existing = mergedStore.sessions.findIndex((existingSession) => existingSession.id === sess.id)
+    if (existing >= 0) {
+      mergedStore.sessions[existing] = sess
+    } else {
+      mergedStore.sessions.unshift(sess)
     }
-    writtenSessions++
+  }
+
+  const write = replaceStore(mergedStore)
+  if (!write.ok) {
+    return {
+      ok: false,
+      error:
+        write.reason === 'validation'
+          ? 'Import would exceed the saved library limits. Nothing was written.'
+          : 'Browser storage rejected the import. Free up site storage and try again. Nothing was written.',
+    }
   }
 
   return {
     ok: true,
     summary: {
-      footprints: writtenFootprints,
-      sessions: writtenSessions,
+      footprints: file.data.footprints.length,
+      sessions: file.data.sessions.length,
     },
   }
 }

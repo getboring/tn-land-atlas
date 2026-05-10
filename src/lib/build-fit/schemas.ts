@@ -57,26 +57,29 @@ export const LineStringSchema = z.object({
 // Numeric caps for user-supplied dimensions. 100,000 ft (~19 miles per
 // side) is well past any sane building footprint or parcel; numbers
 // beyond that are almost certainly bad import data.
-const MAX_DIM_FT = 100_000
-const MAX_AREA_SQFT = 10_000_000_000
+export const MAX_DIM_FT = 100_000
+export const MAX_AREA_SQFT = 10_000_000_000
+export const MAX_FOOTPRINT_NAME_CHARS = 200
+export const MAX_STORIES = 1000
+export const MAX_NOTES_CHARS = 5000
 
 export const FootprintProjectSchema = z.object({
   id: z.string().min(1).max(200),
-  name: z.string().min(1).max(200),
+  name: z.string().min(1).max(MAX_FOOTPRINT_NAME_CHARS),
   kind: z.enum(['rectangle', 'polygon']),
   widthFt: z.number().positive().max(MAX_DIM_FT).nullable(),
   lengthFt: z.number().positive().max(MAX_DIM_FT).nullable(),
   /** Clockwise from north. Default 0 keeps v1 payloads written before
    *  this field existed parseable without bumping schemaVersion. */
   rotationDeg: z.number().finite().default(0),
-  stories: z.number().int().min(0).max(1000).nullable(),
+  stories: z.number().int().min(0).max(MAX_STORIES).nullable(),
   /** Computed footprint area in square feet. Must be positive (geometry
    *  collapsed to zero area is a bug, not a valid template). */
   footprintSqft: z.number().positive().max(MAX_AREA_SQFT),
   /** Geometry is null until the user has placed it / drawn it once. */
   geometry: PolygonSchema.nullable(),
   createdFrom: z.enum(['typed-dimensions', 'drawn-polygon', 'imported']),
-  notes: z.string().max(5000).nullable(),
+  notes: z.string().max(MAX_NOTES_CHARS).nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -95,7 +98,7 @@ const SetbackManualSchema = z.object({
   frontFt: z.number().nonnegative().max(MAX_DIM_FT).nullable(),
   sideFt: z.number().nonnegative().max(MAX_DIM_FT).nullable(),
   rearFt: z.number().nonnegative().max(MAX_DIM_FT).nullable(),
-  notes: z.string().max(5000).nullable(),
+  notes: z.string().max(MAX_NOTES_CHARS).nullable(),
 })
 
 export const SetbackConfigSchema = z.discriminatedUnion('mode', [

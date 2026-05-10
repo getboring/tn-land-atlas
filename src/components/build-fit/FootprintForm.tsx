@@ -8,7 +8,13 @@
 import { useEffect, useState } from 'react'
 import { Save, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { FootprintProject } from '@/lib/build-fit/schemas'
+import {
+  MAX_DIM_FT,
+  MAX_FOOTPRINT_NAME_CHARS,
+  MAX_NOTES_CHARS,
+  MAX_STORIES,
+  type FootprintProject,
+} from '@/lib/build-fit/schemas'
 
 export interface FootprintFormValues {
   name: string
@@ -64,22 +70,21 @@ export function FootprintForm({ initial, onChange, onSave, onDelete }: Footprint
   // the eslint-disable below is intentional, the function identity changing
   // shouldn't re-fire this effect.
   useEffect(() => {
-    if (values.widthFt >= 1 && values.lengthFt >= 1) {
+    if (hasPreviewDimensions(values)) {
       onChange(values)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const isValid =
-    values.name.trim().length > 0 && values.widthFt >= 1 && values.lengthFt >= 1
+  const isValid = isValidForm(values)
 
   const setField = <K extends keyof FootprintFormValues>(key: K, value: FootprintFormValues[K]) => {
     setValues((v) => {
       const next = { ...v, [key]: value }
       // Live preview, emit every valid change directly from the event
-      // handler instead of via a watcher effect. Numbers below 1 ft are
+      // handler instead of via a watcher effect. Out-of-range dimensions are
       // treated as in-progress.
-      if (next.widthFt >= 1 && next.lengthFt >= 1) onChange(next)
+      if (hasPreviewDimensions(next)) onChange(next)
       return next
     })
   }
@@ -93,6 +98,7 @@ export function FootprintForm({ initial, onChange, onSave, onDelete }: Footprint
           aria-label="Footprint name"
           value={values.name}
           onChange={(e) => setField('name', e.target.value)}
+          maxLength={MAX_FOOTPRINT_NAME_CHARS}
           placeholder='e.g. "40 x 60 shop"'
           className={inputCls}
         />
@@ -105,6 +111,7 @@ export function FootprintForm({ initial, onChange, onSave, onDelete }: Footprint
             ariaLabel="Width in feet"
             value={values.widthFt}
             min={1}
+            max={MAX_DIM_FT}
             step={1}
             onChange={(n) => setField('widthFt', n)}
           />
@@ -115,6 +122,7 @@ export function FootprintForm({ initial, onChange, onSave, onDelete }: Footprint
             ariaLabel="Length in feet"
             value={values.lengthFt}
             min={1}
+            max={MAX_DIM_FT}
             step={1}
             onChange={(n) => setField('lengthFt', n)}
           />
@@ -162,6 +170,7 @@ export function FootprintForm({ initial, onChange, onSave, onDelete }: Footprint
         <NumberInput
           value={values.stories ?? 0}
           min={0}
+          max={MAX_STORIES}
           step={1}
           onChange={(n) => setField('stories', n === 0 ? null : n)}
         />
@@ -172,6 +181,7 @@ export function FootprintForm({ initial, onChange, onSave, onDelete }: Footprint
           value={values.notes ?? ''}
           onChange={(e) => setField('notes', e.target.value || null)}
           rows={2}
+          maxLength={MAX_NOTES_CHARS}
           placeholder="e.g. Shop with lean-to later"
           className={cn(inputCls, 'resize-none')}
         />
@@ -248,9 +258,31 @@ function normalizeAngle(a: number): number {
   return n
 }
 
+function isValidDimension(n: number): boolean {
+  return Number.isFinite(n) && n >= 1 && n <= MAX_DIM_FT
+}
+
+function hasPreviewDimensions(values: FootprintFormValues): boolean {
+  return isValidDimension(values.widthFt) && isValidDimension(values.lengthFt)
+}
+
+function isValidForm(values: FootprintFormValues): boolean {
+  const trimmedName = values.name.trim()
+  return (
+    trimmedName.length > 0 &&
+    trimmedName.length <= MAX_FOOTPRINT_NAME_CHARS &&
+    hasPreviewDimensions(values) &&
+    Number.isFinite(values.rotationDeg) &&
+    (values.stories === null ||
+      (Number.isInteger(values.stories) && values.stories >= 0 && values.stories <= MAX_STORIES)) &&
+    (values.notes === null || values.notes.length <= MAX_NOTES_CHARS)
+  )
+}
+
 function NumberInput({
   value,
   min,
+  max,
   step,
   testId,
   ariaLabel,
@@ -258,6 +290,7 @@ function NumberInput({
 }: {
   value: number
   min?: number
+  max?: number
   step?: number
   testId?: string
   ariaLabel?: string
@@ -270,6 +303,7 @@ function NumberInput({
       aria-label={ariaLabel}
       value={value}
       min={min}
+      max={max}
       step={step}
       onChange={(e) => {
         const n = Number(e.target.value)

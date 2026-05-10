@@ -30,6 +30,10 @@ import {
 const STORAGE_KEY = 'holston-scout/build-fit/v1'
 const EVENT_NAME = 'holston-scout:build-fit-storage'
 
+type StorageWriteResult =
+  | { ok: true; store: BuildFitStore }
+  | { ok: false; reason: 'validation' | 'storage' }
+
 function emptyStore(): BuildFitStore {
   return {
     schemaVersion: 1,
@@ -81,33 +85,31 @@ export function getFootprints(): FootprintProject[] {
 }
 
 /**
- * Insert or update a footprint project. Match by `id`. Returns
- * { ok: true, store } on a successful persist, { ok: false, reason } when
- * the schema fails OR the localStorage write was rejected (quota/private
- * mode/etc). Throwing on schema is preserved via .parse so callers in
- * tests still get the loud failure for malformed payloads.
+ * Insert or update a footprint project. Match by `id`. Returns a structured
+ * failure instead of throwing so callers can surface validation/storage
+ * failures without taking down the workspace.
  */
-export function upsertFootprint(
-  footprint: FootprintProject,
-): { ok: true; store: BuildFitStore } | { ok: false; reason: 'storage' } {
-  const parsed = FootprintProjectSchema.parse(footprint)
+export function upsertFootprint(footprint: FootprintProject): StorageWriteResult {
+  const parsed = FootprintProjectSchema.safeParse(footprint)
+  if (!parsed.success) return { ok: false, reason: 'validation' }
   const store = readRaw()
-  const existing = store.footprints.findIndex((f) => f.id === parsed.id)
+  const existing = store.footprints.findIndex((f) => f.id === parsed.data.id)
   if (existing >= 0) {
-    store.footprints[existing] = parsed
+    store.footprints[existing] = parsed.data
   } else {
-    store.footprints.unshift(parsed)
+    store.footprints.unshift(parsed.data)
   }
   if (!writeRaw(store)) return { ok: false, reason: 'storage' }
   return { ok: true, store }
 }
 
-export function removeFootprint(id: string): void {
+export function removeFootprint(id: string): StorageWriteResult {
   const store = readRaw()
   store.footprints = store.footprints.filter((f) => f.id !== id)
   // Cascade, sessions referencing this footprint are now orphans.
   store.sessions = store.sessions.filter((s) => s.footprintProjectId !== id)
-  writeRaw(store)
+  if (!writeRaw(store)) return { ok: false, reason: 'storage' }
+  return { ok: true, store }
 }
 
 // ── fit sessions ───────────────────────────────────────────────────────────
@@ -116,29 +118,38 @@ export function getSessions(): FitSession[] {
   return readRaw().sessions
 }
 
-export function upsertSession(
-  session: FitSession,
-): { ok: true; store: BuildFitStore } | { ok: false; reason: 'storage' } {
-  const parsed = FitSessionSchema.parse(session)
+export function upsertSession(session: FitSession): StorageWriteResult {
+  const parsed = FitSessionSchema.safeParse(session)
+  if (!parsed.success) return { ok: false, reason: 'validation' }
   const store = readRaw()
-  const existing = store.sessions.findIndex((s) => s.id === parsed.id)
+  const existing = store.sessions.findIndex((s) => s.id === parsed.data.id)
   if (existing >= 0) {
-    store.sessions[existing] = parsed
+    store.sessions[existing] = parsed.data
   } else {
-    store.sessions.unshift(parsed)
+    store.sessions.unshift(parsed.data)
   }
   if (!writeRaw(store)) return { ok: false, reason: 'storage' }
   return { ok: true, store }
 }
 
-export function removeSession(id: string): void {
+export function removeSession(id: string): StorageWriteResult {
   const store = readRaw()
   store.sessions = store.sessions.filter((s) => s.id !== id)
-  writeRaw(store)
+  if (!writeRaw(store)) return { ok: false, reason: 'storage' }
+  return { ok: true, store }
 }
 
-export function clearAll(): void {
-  writeRaw(emptyStore())
+export function clearAll(): StorageWriteResult {
+  const store = emptyStore()
+  if (!writeRaw(store)) return { ok: false, reason: 'storage' }
+  return { ok: true, store }
+}
+
+export function replaceStore(store: BuildFitStore): StorageWriteResult {
+  const parsed = BuildFitStoreSchema.safeParse(store)
+  if (!parsed.success) return { ok: false, reason: 'validation' }
+  if (!writeRaw(parsed.data)) return { ok: false, reason: 'storage' }
+  return { ok: true, store: parsed.data }
 }
 
 // ── subscription + React hooks ─────────────────────────────────────────────

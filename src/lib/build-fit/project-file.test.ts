@@ -96,6 +96,20 @@ beforeEach(() => {
   __testing.resetCache()
 })
 
+function withStorageWriteBlocked(run: () => void): void {
+  const proto = Object.getPrototypeOf(window.localStorage) as Storage
+  const original = proto.setItem
+  proto.setItem = () => {
+    throw new Error('QuotaExceededError')
+  }
+  try {
+    run()
+  } finally {
+    proto.setItem = original
+    __testing.resetCache()
+  }
+}
+
 // ── exportStore ────────────────────────────────────────────────────────
 
 describe('exportStore', () => {
@@ -326,6 +340,30 @@ describe('importProjectFile', () => {
     const result = importProjectFile(bad)
     expect(result.ok).toBe(false)
     expect(getFootprints()).toHaveLength(before)
+  })
+
+  it('does not partially import when the single storage write fails', () => {
+    upsertFootprint(fp({ id: 'fp-preserved', name: 'Keep me' }))
+    const text = serializeProjectFile({
+      schemaVersion: 1,
+      app: { name: 'Holston Scout', version: '1.0.0', url: 'https://example.com' },
+      generatedAt: ISO,
+      disclaimer: 'x',
+      data: {
+        schemaVersion: 1,
+        footprints: [fp({ id: 'fp-import-A' }), fp({ id: 'fp-import-B' })],
+        sessions: [],
+        updatedAt: ISO,
+      },
+    })
+
+    withStorageWriteBlocked(() => {
+      const result = importProjectFile(text)
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.error).toMatch(/nothing was written/i)
+    })
+
+    expect(getFootprints().map((f) => f.id)).toEqual(['fp-preserved'])
   })
 })
 

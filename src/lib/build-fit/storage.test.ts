@@ -89,6 +89,24 @@ beforeEach(() => {
   __testing.resetCache()
 })
 
+function withStorageWriteBlocked(run: () => void): void {
+  // Force Storage.prototype.setItem to throw (mimics quota / private-mode).
+  // Patching window.localStorage.setItem directly doesn't take in jsdom
+  // because the localStorage instance lookup may bypass the per-instance
+  // method; the prototype is the reliable seam.
+  const proto = Object.getPrototypeOf(window.localStorage) as Storage
+  const original = proto.setItem
+  proto.setItem = () => {
+    throw new Error('QuotaExceededError')
+  }
+  try {
+    run()
+  } finally {
+    proto.setItem = original
+    __testing.resetCache()
+  }
+}
+
 describe('storage: empty start', () => {
   it('returns empty arrays when nothing has been saved', () => {
     expect(getFootprints()).toEqual([])
@@ -137,23 +155,11 @@ describe('storage: footprints round-trip', () => {
   })
 
   it('returns ok:false reason:storage when the localStorage write fails', () => {
-    // Force Storage.prototype.setItem to throw (mimics quota / private-mode).
-    // Patching window.localStorage.setItem directly doesn't take in jsdom
-    // because the localStorage instance lookup may bypass the per-instance
-    // method; the prototype is the reliable seam.
-    const proto = Object.getPrototypeOf(window.localStorage) as Storage
-    const original = proto.setItem
-    proto.setItem = () => {
-      throw new Error('QuotaExceededError')
-    }
-    try {
+    withStorageWriteBlocked(() => {
       const r = upsertFootprint(fp({ id: 'fp-quota-blocked' }))
       expect(r.ok).toBe(false)
       if (!r.ok) expect(r.reason).toBe('storage')
-    } finally {
-      proto.setItem = original
-      __testing.resetCache()
-    }
+    })
   })
 
   it('updates by id without duplicating', () => {
@@ -184,6 +190,17 @@ describe('storage: footprints round-trip', () => {
     removeFootprint('fp-A')
     expect(getSessions().map((s) => s.id)).toEqual(['s2'])
   })
+
+  it('returns ok:false and preserves data when footprint delete write fails', () => {
+    upsertFootprint(fp({ id: 'fp-A' }))
+    upsertFootprint(fp({ id: 'fp-B' }))
+    withStorageWriteBlocked(() => {
+      const r = removeFootprint('fp-A')
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toBe('storage')
+    })
+    expect(getFootprints().map((f) => f.id)).toEqual(['fp-B', 'fp-A'])
+  })
 })
 
 describe('storage: sessions round-trip', () => {
@@ -205,6 +222,17 @@ describe('storage: sessions round-trip', () => {
     upsertSession(minimalSession({ id: 's-B' }))
     removeSession('s-A')
     expect(getSessions().map((s) => s.id)).toEqual(['s-B'])
+  })
+
+  it('returns ok:false and preserves data when session delete write fails', () => {
+    upsertSession(minimalSession({ id: 's-A' }))
+    upsertSession(minimalSession({ id: 's-B' }))
+    withStorageWriteBlocked(() => {
+      const r = removeSession('s-A')
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toBe('storage')
+    })
+    expect(getSessions().map((s) => s.id)).toEqual(['s-B', 's-A'])
   })
 })
 
@@ -266,13 +294,17 @@ describe('storage: events', () => {
 describe('storage: write validation', () => {
   it('rejects an upsertFootprint payload that fails the schema', () => {
     // Empty name violates FootprintProjectSchema's z.string().min(1).
-    expect(() => upsertFootprint(fp({ name: '' }))).toThrow()
+    const r = upsertFootprint(fp({ name: '' }))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toBe('validation')
     expect(getFootprints()).toEqual([])
   })
 
   it('rejects an upsertSession payload missing required fields', () => {
     const bad = minimalSession({ parcelKey: '' })
-    expect(() => upsertSession(bad)).toThrow()
+    const r = upsertSession(bad)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toBe('validation')
     expect(getSessions()).toEqual([])
   })
 
@@ -320,5 +352,17 @@ describe('storage: clearAll', () => {
     clearAll()
     expect(getFootprints()).toEqual([])
     expect(getSessions()).toEqual([])
+  })
+
+  it('returns ok:false and preserves data when clear write fails', () => {
+    upsertFootprint(fp())
+    upsertSession(minimalSession())
+    withStorageWriteBlocked(() => {
+      const r = clearAll()
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.reason).toBe('storage')
+    })
+    expect(getFootprints()).toHaveLength(1)
+    expect(getSessions()).toHaveLength(1)
   })
 })
