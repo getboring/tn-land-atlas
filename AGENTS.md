@@ -139,12 +139,16 @@ Search-result rows are `min-h-[64px]`. WCAG 2.5.5 AA. Don't shrink them
 to fit more chrome on screen.
 
 ### 11. ArcGIS geometry can be MultiPolygon
-Even though `ParcelFeature.geometry` is typed as `Polygon`, ArcGIS
-occasionally returns MultiPolygon for parcels split across waterways or
-roads. Use `featureBounds` / `unionBounds` from `ParcelMap.tsx` for any
-bounds calculation — they walk both shapes and filter NaN. Never
-hand-roll `coords.map(c => c[0])` on `geometry.coordinates[0]`; it crashes
-on MultiPolygon.
+`ParcelFeature.geometry` is now a discriminated union (`Polygon |
+MultiPolygon`) in `src/lib/arcgis.ts`, so the type contract is honest.
+ArcGIS occasionally returns MultiPolygon for parcels split across
+waterways or roads. Use `featureBounds` / `unionBounds` from
+`ParcelMap.tsx` for any bounds calculation; they walk both shapes via
+the recursive `collectCoords` helper and filter NaN. Use
+`geometry.type === 'Polygon'` discrimination if you need to write
+shape-specific code, mirroring the pattern in `src/lib/insights.ts`'s
+`centroid()`. Never hand-roll `coords.map(c => c[0])` on
+`geometry.coordinates[0]`; it crashes on MultiPolygon.
 
 ### 12. Map exposure for E2E only
 `window.__map__` exists for Playwright tests via the typed augmentation in

@@ -207,7 +207,7 @@ test.describe('Holston Scout', () => {
       }
     })
     expect(dims).not.toBeNull()
-    // Container must occupy more than half the viewport — guards against
+    // Container must occupy more than half the viewport, guards against
     // CSS regressions that collapse the map to height: 0.
     expect(dims!.containerH).toBeGreaterThan(dims!.viewportH * 0.6)
     expect(dims!.canvasH).toBeGreaterThan(dims!.viewportH * 0.6)
@@ -391,8 +391,11 @@ test.describe('Holston Scout', () => {
   test('clearing the parcel after fit mode also clears fit layers and selection', async ({ page }) => {
     // Real user flow: open a parcel, open fit mode, exit fit (which
     // restores the detail panel), then close the detail panel via its X.
-    // Asserts the full teardown — fit layers empty, detail panel gone,
-    // OBJECTID-keyed selection layers reset to NO_SELECTION.
+    // Asserts: detail panel is gone (parcel deselected) and the
+    // fit-footprint source is empty. The OBJECTID-keyed selection-layer
+    // filters (parcels-selected / parcels-selected-fill / parcel-corners)
+    // are NOT directly asserted here; the unit-level clearSelection logic
+    // covers those.
     await loadParcelsAt(page, -82.3534, 36.3134, 16)
     await clickFirstParcel(page)
     await page.getByRole('button', { name: /Test Building Fit/i }).click()

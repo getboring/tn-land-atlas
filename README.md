@@ -30,7 +30,7 @@ Live: <https://tn-land-atlas.pages.dev>
 - ArcGIS REST (Johnson City) for live parcel polygons
 - Supabase REST for enriched data — server-side only via Pages Functions
 - Cloudflare Pages + Pages Functions
-- Playwright for E2E (~50+ tests x 3 viewports), Vitest for unit tests across
+- Playwright for E2E (~30 tests across 3 viewports, ~85 effective runs after mobile-only skips), Vitest for unit tests across
   `src/lib/{insights,permalink,lazyRetry}.ts` and the `src/lib/build-fit/` suite (170+ cases)
 
 ## Quick start

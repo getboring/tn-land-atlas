@@ -125,7 +125,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
 
   // ── Day 4 placement: user-positioned center ──────────────────────────────
   // null means "use parcel centroid (default)." Drag updates this.
-  // Switching footprints clears it back to default — each footprint starts
+  // Switching footprints clears it back to default, each footprint starts
   // centered. The reset is wired into the selection setter (selectFootprint)
   // below so we never sync userCenter via a watcher effect.
   const [userCenter, setUserCenter] = useState<[number, number] | null>(null)
@@ -262,7 +262,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       e.preventDefault()
       draggingRef.current = true
       canvas.style.cursor = 'grabbing'
-      // Disable map pan/zoom while dragging — without this, the map would
+      // Disable map pan/zoom while dragging, without this, the map would
       // pan along with the cursor and the handle would never catch up.
       map.dragPan.disable()
     }
@@ -505,7 +505,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         <MobileTab label="Fit" active={mobileTab === 'fit'} onClick={() => setMobileTab('fit')} />
       </div>
 
-      {/* Footprint panel — single mount.
+      {/* Footprint panel, single mount.
           Desktop (sm+): fixed-width column on the left.
           Mobile (<sm): bottom sheet, gated by tab state. */}
       <div
@@ -537,7 +537,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         />
       </div>
 
-      {/* Fit result panel — single mount.
+      {/* Fit result panel, single mount.
           Desktop (sm+): fixed-width column on the right.
           Mobile (<sm): bottom sheet, gated by tab state. */}
       <div

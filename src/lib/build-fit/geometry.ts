@@ -203,13 +203,13 @@ export function normalizeParcel(geom: PolygonOrMulti): NormalizedParcel {
   return {
     largest,
     full: geom,
-    warning: 'Parcel has multiple geometry parts. Fit check used the largest parcel part for this planning estimate.',
+    warning: 'Parcel has multiple geometry parts. Default placement used the largest part; the fit check still runs against the full parcel geometry.',
   }
 }
 
 // ── Footprint dimension labels ──────────────────────────────────────────
 // Pure function: given a typed-rectangle footprint and its dimensions,
-// produce three Point features for the fit-labels source — one near each
+// produce three Point features for the fit-labels source, one near each
 // of the two distinguishable side midpoints (width axis + length axis)
 // plus an area label at the rectangle's center.
 //
@@ -225,7 +225,7 @@ export function normalizeParcel(geom: PolygonOrMulti): NormalizedParcel {
 // for area. Labelling both width edges would be redundant.
 //
 // `properties.label` is what the fit-labels symbol layer reads via
-// ['get', 'label'] — see src/lib/build-fit/map-layers.ts.
+// ['get', 'label'], see src/lib/build-fit/map-layers.ts.
 
 export interface FootprintLabelInput {
   footprint: Polygon
