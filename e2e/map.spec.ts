@@ -417,10 +417,10 @@ test.describe('Holston Scout', () => {
     // and length stay; the form's mount-time onChange has already populated
     // the draft so save can complete with valid geometry. Use stable test
     // ids to dodge layout/order fragility across viewports.
-    const nameInput = page.getByTestId('fit-form-name').first()
+    const nameInput = page.locator('[data-testid="fit-form-name"]:visible')
     await expect(nameInput).toBeVisible({ timeout: 8000 })
     await nameInput.fill('40 x 60 shop')
-    await page.getByTestId('fit-form-rotation').first().fill('45')
+    await page.locator('[data-testid="fit-form-rotation"]:visible').fill('45')
     await page.getByRole('button', { name: /^Save footprint$/i }).click()
 
     // The library now contains the saved footprint as a list item.
@@ -435,8 +435,9 @@ test.describe('Holston Scout', () => {
     await expect(page.getByRole('button', { name: /40 x 60 shop/ })).toBeVisible()
 
     // Selecting the saved footprint preserves rotation. Auto-selection on
-    // re-open already loads it, so just read the rotation field.
-    await expect(page.getByTestId('fit-form-rotation').first()).toHaveValue('45')
+    // re-open already loads it, so just read the rotation field. :visible
+    // filter dodges the dual-mount workspace (one hidden via media query).
+    await expect(page.locator('[data-testid="fit-form-rotation"]:visible')).toHaveValue('45')
   })
 
   test('mobile bottom sheet exposes Footprint and Fit tabs', async ({ page, viewport }) => {
@@ -459,7 +460,9 @@ test.describe('Holston Scout', () => {
     await fitTab.click()
     await expect(footprintTab).toHaveAttribute('aria-selected', 'false')
     await expect(fitTab).toHaveAttribute('aria-selected', 'true')
-    await expect(page.getByText('Setback envelope check arrives in the next release.')).toBeVisible()
+    // Setbacks placeholder copy is rendered in both the desktop side panel
+    // and the mobile sheet's Fit tab; scope to the visible (mobile) one.
+    await expect(page.locator(':visible', { hasText: 'Setback envelope check arrives in the next release.' })).toBeVisible()
   })
 
   test('rotation quick-buttons update the footprint geometry', async ({ page }) => {
@@ -468,7 +471,20 @@ test.describe('Holston Scout', () => {
     await page.getByRole('button', { name: /Test Building Fit/i }).click()
     await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
 
-    // Capture the footprint coordinates before bumping rotation.
+    // Wait for the default-rectangle to render (form's mount-time onChange
+    // populates the fit-footprint source) before capturing its coordinates.
+    await expect
+      .poll(async () =>
+        await page.evaluate(() => {
+          const m = (
+            window as unknown as {
+              __map__?: { querySourceFeatures: (id: string) => Array<{ geometry: { coordinates: number[][][] } }> }
+            }
+          ).__map__
+          if (!m) return 0
+          return m.querySourceFeatures('fit-footprint').length
+        }), { timeout: 6000, intervals: [200, 400] })
+      .toBeGreaterThan(0)
     const before = await page.evaluate(() => {
       const m = (
         window as unknown as {
@@ -481,8 +497,9 @@ test.describe('Holston Scout', () => {
     })
     expect(before).not.toBeNull()
 
-    // Click the +90° quick-button (aria-label).
-    await page.getByRole('button', { name: 'Rotate +90 degrees' }).first().click()
+    // Click the +90° quick-button. :visible filter picks the rendered copy
+    // (desktop side panel OR mobile bottom sheet, never both).
+    await page.locator('button[aria-label="Rotate +90 degrees"]:visible').click()
 
     // Geometry should have moved as a result of the rotation.
     await expect
@@ -511,15 +528,15 @@ test.describe('Holston Scout', () => {
     await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
 
     // Need a name in the form, Save Placement auto-saves the footprint.
-    const nameInput = page.getByTestId('fit-form-name').first()
+    const nameInput = page.locator('[data-testid="fit-form-name"]:visible')
     await expect(nameInput).toBeVisible({ timeout: 8000 })
     await nameInput.fill('Save-test shop')
 
-    // Click Save placement. On mobile the action lives inside the Fit tab
-    // of the bottom sheet, so flip tabs first if we're on the mobile layout.
+    // Click Save placement. On mobile the button is inside the Fit tab of
+    // the bottom sheet, so flip there first if a tab is rendered.
     const fitTab = page.getByRole('tab', { name: 'Fit' })
     if (await fitTab.count()) await fitTab.click()
-    await page.getByRole('button', { name: /^Save placement$/ }).first().click()
+    await page.locator('button:visible', { hasText: /^Save placement$/ }).click()
 
     // Brief saved-flash, button text changes.
     await expect(page.getByRole('button', { name: /Placement saved/ })).toBeVisible({ timeout: 2000 })
