@@ -372,17 +372,20 @@ test.describe('Holston Scout', () => {
     await expect(page.locator('[data-fit-workspace]')).toHaveCount(0)
     // Detail panel returns.
     await expect(page.getByText('Property Details')).toBeVisible({ timeout: 4000 })
-    // fit-footprint source is empty.
-    const fpCount = await page.evaluate(() => {
-      const m = (
-        window as unknown as {
-          __map__?: { querySourceFeatures: (id: string) => unknown[] }
-        }
-      ).__map__
-      if (!m) return -1
-      return m.querySourceFeatures('fit-footprint').length
-    })
-    expect(fpCount).toBe(0)
+    // fit-footprint source drained by the workspace's unmount cleanup.
+    // Poll because querySourceFeatures can briefly return pre-setData
+    // cached features depending on renderer flush timing.
+    await expect
+      .poll(async () =>
+        await page.evaluate(() => {
+          const m = (
+            window as unknown as {
+              __map__?: { querySourceFeatures: (id: string) => unknown[] }
+            }
+          ).__map__
+          return m ? m.querySourceFeatures('fit-footprint').length : -1
+        }), { timeout: 4000, intervals: [100, 250, 500] })
+      .toBe(0)
   })
 
   test('clearing the parcel after fit mode also clears fit layers and selection', async ({ page }) => {
@@ -404,17 +407,22 @@ test.describe('Holston Scout', () => {
     await page.getByRole('button', { name: /Close property details/i }).click()
     await expect(page.getByText('Property Details')).toHaveCount(0)
 
-    // Step 3: verify fit-footprint source is empty (the workspace's
-    // unmount-time clearFitLayers should have already drained it on exit).
-    const fpCount = await page.evaluate(() => {
-      const m = (
-        window as unknown as {
-          __map__?: { querySourceFeatures: (id: string) => unknown[] }
-        }
-      ).__map__
-      return m ? m.querySourceFeatures('fit-footprint').length : -1
-    })
-    expect(fpCount).toBe(0)
+    // Step 3: verify fit-footprint source is empty. The workspace's
+    // unmount-time clearFitLayers ran on Step 1, but querySourceFeatures
+    // can briefly return pre-setData cached features depending on the
+    // renderer's flush timing (observed flaky on chromium-tablet at iPad
+    // Mini viewport). Poll instead of single-shot read.
+    await expect
+      .poll(async () =>
+        await page.evaluate(() => {
+          const m = (
+            window as unknown as {
+              __map__?: { querySourceFeatures: (id: string) => unknown[] }
+            }
+          ).__map__
+          return m ? m.querySourceFeatures('fit-footprint').length : -1
+        }), { timeout: 4000, intervals: [100, 250, 500] })
+      .toBe(0)
   })
 
   test('saving a footprint adds it to the library and persists across reload', async ({ page }) => {
