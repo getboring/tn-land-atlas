@@ -16,6 +16,10 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@turf/area": "^7.3.5",
+    "@turf/boolean-within": "^7.3.5",
+    "@turf/destination": "^7.3.5",
+    "@turf/helpers": "^7.3.5",
     "@watergis/maplibre-gl-export": "^4.1.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -27,7 +31,8 @@
     "react-error-boundary": "^6.1.1",
     "tailwind-merge": "^3.5.0",
     "terra-draw": "^1.30.0",
-    "terra-draw-maplibre-gl-adapter": "^1.4.0"
+    "terra-draw-maplibre-gl-adapter": "^1.4.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260508.1",
