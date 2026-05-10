@@ -688,6 +688,83 @@ test.describe('Holston Scout', () => {
     expect(['Polygon', 'MultiPolygon']).toContain(s.envelope.geometry.type)
   })
 
+  test('project import accepts a valid file and adds footprints to the library', async ({ page }) => {
+    // Start with an empty store so the import is the only source of data.
+    await page.goto('/?lng=-82.3534&lat=36.3134&z=16')
+    await page.evaluate(() => window.localStorage.removeItem('holston-scout/build-fit/v1'))
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    // Build a project-file payload in-page (mirrors what exportStore +
+    // serializeProjectFile produce). Then drive the hidden file input by
+    // setting an in-memory File on it. This skips the OS file picker
+    // entirely, which Playwright can't drive.
+    const payload = {
+      schemaVersion: 1,
+      app: { name: 'Holston Scout', version: '1.0.0', url: 'https://tn-land-atlas.pages.dev' },
+      generatedAt: new Date().toISOString(),
+      disclaimer: 'planning estimate only',
+      data: {
+        schemaVersion: 1,
+        footprints: [
+          {
+            id: 'imported-fp-001',
+            name: 'Imported 40x60 shop',
+            kind: 'rectangle',
+            widthFt: 40,
+            lengthFt: 60,
+            rotationDeg: 0,
+            stories: 1,
+            footprintSqft: 2400,
+            geometry: null,
+            createdFrom: 'imported',
+            notes: null,
+            createdAt: '2026-05-10T00:00:00.000Z',
+            updatedAt: '2026-05-10T00:00:00.000Z',
+          },
+        ],
+        sessions: [],
+        updatedAt: '2026-05-10T00:00:00.000Z',
+      },
+    }
+    const fileInput = page.locator('input[type="file"][accept*="hscout"]')
+    await fileInput.setInputFiles({
+      name: 'test-import.hscout.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(payload)),
+    })
+
+    // Success notice appears.
+    await expect(page.locator('[data-project-notice]:visible')).toContainText(
+      /Imported 1 footprint/,
+    )
+
+    // Library now shows the imported footprint.
+    await expect(
+      page.getByRole('button', { name: /Imported 40x60 shop/ }).filter({ visible: true }),
+    ).toBeVisible()
+  })
+
+  test('project import rejects an invalid file with an error notice', async ({ page }) => {
+    await page.goto('/?lng=-82.3534&lat=36.3134&z=16')
+    await page.evaluate(() => window.localStorage.removeItem('holston-scout/build-fit/v1'))
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    const fileInput = page.locator('input[type="file"][accept*="hscout"]')
+    await fileInput.setInputFiles({
+      name: 'bad.hscout.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from('{not json'),
+    })
+
+    await expect(page.locator('[data-project-notice]:visible')).toContainText(/not valid JSON/i)
+  })
+
   test('Tools popover still works after entering and exiting fit mode', async ({ page }) => {
     await loadParcelsAt(page, -82.3534, 36.3134, 16)
     await clickFirstParcel(page)

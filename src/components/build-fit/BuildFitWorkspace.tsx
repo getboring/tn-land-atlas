@@ -14,15 +14,12 @@
 //   Unmount       clear fit sources (layers stay installed for re-entry)
 //   Parcel clear  ParcelMap closes us via onClose
 //
-// What this file does NOT do (Phase 3+):
-//   No setbacks (Phase 3).
-//   No setback envelope drawing (Phase 3).
-//   No project-file export/import (Phase 4).
+// What this file does NOT do (Phase 5+):
 //   No print/PDF report (Phase 5).
 //   No Send-to-Builder (much later).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { X, Download, Upload, AlertTriangle, Check } from 'lucide-react'
 import { ulid } from 'ulidx'
 import type maplibregl from 'maplibre-gl'
 import { cn } from '@/lib/utils'
@@ -62,6 +59,14 @@ import {
   removeFootprint,
   upsertSession,
 } from '@/lib/build-fit/storage'
+import {
+  exportStore,
+  serializeProjectFile,
+  exportFilename,
+  importProjectFile,
+  triggerDownload,
+  readFileAsText,
+} from '@/lib/build-fit/project-file'
 import { FootprintLibrary } from './FootprintLibrary'
 import { FootprintForm, type FootprintFormValues } from './FootprintForm'
 import { FitResultPanel, type FitResultDisplay } from './FitResultPanel'
@@ -145,6 +150,79 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
   // so the pattern stays out of react-hooks/set-state-in-effect.
   const [placementSavedAt, setPlacementSavedAt] = useState<number | null>(null)
   const savedFlashTimeoutRef = useRef<number | null>(null)
+
+  // Phase 4 export/import. Inline notice for both: success and error
+  // share the same notice slot, cleared via timeout from the handler.
+  const [projectNotice, setProjectNotice] = useState<
+    { kind: 'ok' | 'err'; text: string } | null
+  >(null)
+  const projectNoticeTimeoutRef = useRef<number | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const flashProjectNotice = useCallback((kind: 'ok' | 'err', text: string) => {
+    setProjectNotice({ kind, text })
+    if (projectNoticeTimeoutRef.current != null) {
+      window.clearTimeout(projectNoticeTimeoutRef.current)
+    }
+    projectNoticeTimeoutRef.current = window.setTimeout(() => {
+      setProjectNotice(null)
+      projectNoticeTimeoutRef.current = null
+    }, kind === 'ok' ? 2500 : 5000)
+  }, [])
+
+  // Clean up any pending notice on unmount.
+  useEffect(() => {
+    return () => {
+      if (projectNoticeTimeoutRef.current != null) {
+        window.clearTimeout(projectNoticeTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const onExportProject = useCallback(() => {
+    const file = exportStore()
+    const text = serializeProjectFile(file)
+    triggerDownload(exportFilename({ kind: 'store' }), text)
+    const total = file.data.footprints.length + file.data.sessions.length
+    flashProjectNotice(
+      'ok',
+      total === 0
+        ? 'Exported an empty project file. Save a footprint or placement first.'
+        : `Exported ${file.data.footprints.length} footprint${file.data.footprints.length === 1 ? '' : 's'} + ${file.data.sessions.length} session${file.data.sessions.length === 1 ? '' : 's'}.`,
+    )
+  }, [flashProjectNotice])
+
+  const onImportClick = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const onImportFile = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+      try {
+        const text = await readFileAsText(file)
+        const result = importProjectFile(text)
+        if (result.ok) {
+          flashProjectNotice(
+            'ok',
+            `Imported ${result.summary.footprints} footprint${result.summary.footprints === 1 ? '' : 's'} + ${result.summary.sessions} session${result.summary.sessions === 1 ? '' : 's'}.`,
+          )
+        } else {
+          flashProjectNotice('err', result.error)
+        }
+      } catch (err) {
+        flashProjectNotice(
+          'err',
+          err instanceof Error ? `Couldn't read file: ${err.message}` : "Couldn't read file.",
+        )
+      } finally {
+        // Reset the input so the same file can be re-selected.
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      }
+    },
+    [flashProjectNotice],
+  )
 
   // Single setter that owns selection-side-effects: clear userCenter so a
   // new footprint starts at the parcel centroid; clear any saved-flash to
@@ -555,6 +633,32 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         </div>
         <button
           type="button"
+          onClick={onExportProject}
+          aria-label="Export project file"
+          title="Download a .hscout.json with all saved footprints and sessions"
+          className="inline-flex items-center justify-center h-10 w-10 rounded-lg bg-surface/95 backdrop-blur border border-border-default text-text-tertiary hover:text-white hover:bg-white/10"
+        >
+          <Download className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          onClick={onImportClick}
+          aria-label="Import project file"
+          title="Load a .hscout.json file into the local library"
+          className="inline-flex items-center justify-center h-10 w-10 rounded-lg bg-surface/95 backdrop-blur border border-border-default text-text-tertiary hover:text-white hover:bg-white/10"
+        >
+          <Upload className="w-4 h-4" />
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,.hscout.json,application/json"
+          onChange={onImportFile}
+          aria-label="Project file to import"
+          className="hidden"
+        />
+        <button
+          type="button"
           onClick={onClose}
           aria-label="Exit Building Fit"
           className="inline-flex items-center justify-center h-10 w-10 rounded-lg bg-surface/95 backdrop-blur border border-border-default text-text-tertiary hover:text-white hover:bg-white/10"
@@ -563,6 +667,29 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
           <X className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Inline notice for import/export. Sits just under the top bar so
+          it doesn't shift the panels. Auto-dismisses via handler timeout. */}
+      {projectNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-project-notice
+          className={cn(
+            'pointer-events-auto absolute top-14 left-3 right-3 sm:left-auto sm:w-[640px] px-3 py-2 rounded-lg text-[11px] flex items-start gap-2',
+            projectNotice.kind === 'ok'
+              ? 'bg-success/15 text-success border border-success/40'
+              : 'bg-danger/15 text-danger border border-danger/40',
+          )}
+        >
+          {projectNotice.kind === 'ok' ? (
+            <Check className="w-3.5 h-3.5 flex-none mt-0.5" />
+          ) : (
+            <AlertTriangle className="w-3.5 h-3.5 flex-none mt-0.5" />
+          )}
+          <span className="flex-1">{projectNotice.text}</span>
+        </div>
+      )}
 
       {/* Mobile-only tab bar. Sits just above the bottom-sheet panels at
           the 60vh mark. Tab state toggles display on the single-mounted
