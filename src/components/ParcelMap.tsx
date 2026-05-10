@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback, lazy, Suspense } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import mlcontour from 'maplibre-contour'
@@ -15,6 +15,10 @@ import type { PropertyData } from '@/lib/supabase-queries'
 import { parsePermalink, updateAddressBar, DEFAULT_MAP_VIEW } from '@/lib/permalink'
 import { createDraw, setDrawMode, lineDistanceMeters, formatDistance, type DrawMode } from '@/lib/draw'
 import type { TerraDraw } from 'terra-draw'
+// Lazy — Turf + Zod + workspace components ship in a separate chunk loaded
+// only when the user clicks "Test Building Fit." Keeps the parcel-explore
+// path's cold start unchanged.
+const BuildFitWorkspace = lazy(() => import('@/components/build-fit/BuildFitWorkspace'))
 import {
   pricePerAcre,
   formatPricePerAcre,
@@ -183,6 +187,14 @@ export default function ParcelMap() {
   const [basemap, setBasemap] = useState<Basemap>('satellite')
   const [layersOpen, setLayersOpen] = useState(false)
   const [locating, setLocating] = useState(false)
+  /** Fit-mode flag. Wraps the BuildFitWorkspace overlay; ParcelMap stays a
+   *  thin mount/entry point per projects/buildplan2.md §Fit Mode Integration. */
+  const [fitOpen, setFitOpen] = useState(false)
+  /** Mirrors map.current as render-safe state when fit mode is open. The
+   *  cast is the structural map -> FitMapTarget escape; maplibregl's
+   *  discriminated AddLayerObject doesn't unify with our looser FitLayerSpec
+   *  at compile time, but they're shape-compatible at runtime. */
+  const [fitMap, setFitMap] = useState<import('@/lib/build-fit/map-layers').FitMapTarget | null>(null)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [errorToast, setErrorToast] = useState<string | null>(null)
   const [drawMode, setDrawModeState] = useState<DrawMode>('idle')
@@ -785,6 +797,36 @@ export default function ParcelMap() {
     setSearchResults(null)
   }, [])
 
+  // Track map.current as state when fit mode is open so the workspace
+  // mount predicate doesn't have to read the ref during render. setFitMap
+  // runs from inside an effect — allowed. Gate on fitOpen so the cast
+  // only happens when we actually need a FitMapTarget.
+  useEffect(() => {
+    if (fitOpen) {
+      setFitMap(map.current as unknown as import('@/lib/build-fit/map-layers').FitMapTarget | null)
+    } else {
+      setFitMap(null)
+    }
+  }, [fitOpen])
+
+  const openFit = useCallback(() => {
+    // Per projects/buildplan2.md §Fit Mode Integration:
+    //   - close Layers / Tools / Filter popovers
+    //   - idle Terra Draw (lasso/ruler clears globally on idle, but fit mode
+    //     should not coexist with active drawing)
+    //   - keep selectedParcel intact
+    setLayersOpen(false)
+    setToolsOpen(false)
+    setFilterOpen(false)
+    if (drawMode !== 'idle') {
+      const d = drawRef.current
+      if (d) setDrawMode(d, 'idle')
+      setDrawModeState('idle')
+      setRulerDistance(null)
+    }
+    setFitOpen(true)
+  }, [drawMode])
+
   const toggleContours = () => {
     const next = !contoursVisible
     setContoursVisible(next)
@@ -804,6 +846,10 @@ export default function ParcelMap() {
     setSelectedParcel(null)
     setEnriched(null)
     setEnrichLoading(false)
+    // Fit mode requires a selected parcel; if the parcel goes away, so
+    // does the workspace. The workspace's own unmount path clears its
+    // map sources via clearFitLayers (see BuildFitWorkspace useEffect).
+    setFitOpen(false)
     const m = map.current
     if (m?.getLayer('parcels-selected')) {
       m.setFilter('parcels-selected', ['==', ['get', 'OBJECTID'], NO_SELECTION])
@@ -969,7 +1015,7 @@ export default function ParcelMap() {
           All tap targets are at least 40px tall (WCAG 2.5.5 AA / iOS HIG comfortable).
           pointer-events-none on the wrapper so map clicks pass through any
           empty space between the buttons; pointer-events-auto on each child. */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2 pointer-events-none [&>*]:pointer-events-auto">
+      <div className={cn('absolute top-3 left-3 right-3 z-10 flex items-center gap-2 pointer-events-none [&>*]:pointer-events-auto', fitOpen && 'hidden')}>
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <div className="relative flex-1 min-w-0">
             <input
@@ -1045,7 +1091,7 @@ export default function ParcelMap() {
       {/* Recent parcels pill — bottom-left, above the MapLibre ScaleControl.
           Pre-auth come-back loop: localStorage holds the last 15 viewed
           parcels. Day 3 of polish-pass-1. */}
-      <RecentParcelsPill
+      {!fitOpen && <RecentParcelsPill
         onPick={async (gislink) => {
           if (!map.current) return
           try {
@@ -1058,7 +1104,7 @@ export default function ParcelMap() {
             setErrorToast("Couldn't load that parcel. The county service may be unavailable.")
           }
         }}
-      />
+      />}
 
       {/* Bottom action bar — the menu system. Universal across viewports.
           Native HTML semantics (<nav role="toolbar">), tap targets >= 48px,
@@ -1067,7 +1113,7 @@ export default function ParcelMap() {
       <nav
         role="toolbar"
         aria-label="Map actions"
-        className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none [&>*]:pointer-events-auto safe-bottom"
+        className={cn('absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none [&>*]:pointer-events-auto safe-bottom', fitOpen && 'hidden')}
       >
         <div className="flex items-center gap-1 rounded-2xl bg-surface/90 backdrop-blur border border-border-default p-1 shadow-lg">
           <ActionBarButton
@@ -1363,8 +1409,10 @@ export default function ParcelMap() {
       {/* Keyboard shortcuts overlay — opens on '?'. */}
       <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
-      {/* Detail sidebar */}
-      {selectedParcel && (
+      {/* Detail sidebar — hidden while fit mode is open; the workspace
+          replaces it. Print stylesheet still targets [data-print-target]
+          so a parcel handout printed before entering fit mode works. */}
+      {selectedParcel && !fitOpen && (
         <div data-print-target className="absolute top-16 right-3 left-3 sm:left-auto z-20 sm:w-80 max-h-[calc(100%-6rem)] overflow-y-auto">
           <Card>
             <CardHeader className="pb-2">
@@ -1395,6 +1443,16 @@ export default function ParcelMap() {
                 f={selectedParcel}
                 onSearchOwner={(owner) => { setSearchQuery(owner); doSearch(owner) }}
               />
+              {/* Primary CTA — first behavior-changing surface from the
+                  build-fit sprint. Full-width amber per the Day 3 UX call.
+                  print:hidden so the parcel handout doesn't carry it. */}
+              <button
+                type="button"
+                onClick={openFit}
+                className="w-full inline-flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-semibold bg-brand text-white hover:bg-brand-strong hover:text-text-inverse transition-colors print:hidden"
+              >
+                Test Building Fit
+              </button>
               <ParcelInsights f={selectedParcel} />
 
               {/* Section: Parcel — what identifies this lot. */}
@@ -1504,6 +1562,16 @@ export default function ParcelMap() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Build-fit workspace — lazy-loaded the first time the user opens
+          it. State-tracked map ref (see useEffect below) avoids reading
+          ref.current in render. The chunk carries Turf, Zod, and the
+          workspace components. */}
+      {fitOpen && selectedParcel && fitMap && (
+        <Suspense fallback={null}>
+          <BuildFitWorkspace map={fitMap} parcel={selectedParcel} onClose={() => setFitOpen(false)} />
+        </Suspense>
       )}
 
     </div>

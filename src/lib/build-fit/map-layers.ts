@@ -37,12 +37,16 @@ import type { Polygon, MultiPolygon } from './schemas'
 // hard runtime dep on maplibre-gl. The real `maplibregl.Map` is structurally
 // compatible.
 
+// `getSource` returns `unknown` here so the real `maplibregl.Map`'s broader
+// `Source` union (raster | vector | geojson | ...) is structurally
+// compatible. We cast to a `setData`-bearing shape inside setSourceData and
+// bail if the source isn't actually a GeoJSON one.
 export interface FitMapTarget {
   addSource(id: string, spec: { type: 'geojson'; data: GeoJSON.FeatureCollection }): void
-  getSource(id: string): { setData: (d: GeoJSON.FeatureCollection) => void } | undefined
+  getSource(id: string): unknown
   removeSource(id: string): void
   addLayer(spec: FitLayerSpec, beforeId?: string): void
-  getLayer(id: string): { id: string } | undefined
+  getLayer(id: string): unknown
   removeLayer(id: string): void
   getStyle?: () => { layers?: Array<{ id: string }> } | undefined
 }
@@ -328,8 +332,8 @@ export function updateFitLayers(map: FitMapTarget, update: FitUpdate): void {
 }
 
 function setSourceData(map: FitMapTarget, id: string, data: GeoJSON.FeatureCollection): void {
-  const src = map.getSource(id)
-  if (src) src.setData(data)
+  const src = map.getSource(id) as { setData?: (d: GeoJSON.FeatureCollection) => void } | undefined
+  if (src && typeof src.setData === 'function') src.setData(data)
 }
 
 /** Empty every fit-* source. Layers stay in place. Non-fit layers untouched. */
