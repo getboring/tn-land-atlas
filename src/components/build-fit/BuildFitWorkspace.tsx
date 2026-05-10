@@ -206,6 +206,10 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
     setDraftValues(null)
   }, [])
 
+  // Mobile-only tab. Desktop renders both panels side-by-side; mobile shows
+  // one at a time inside a bottom sheet so the map stays visible above.
+  const [mobileTab, setMobileTab] = useState<'footprint' | 'fit'>('footprint')
+
   // ── Render ────────────────────────────────────────────────────────────────
   // Workspace overlays the map. Side panels (desktop) or bottom sheet
   // (mobile) carry the controls; the map middle stays interactive so the
@@ -234,19 +238,10 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         </button>
       </div>
 
-      {/* Desktop: left panel (footprints + form), right panel (fit result).
-          Mobile: stacked below the top bar; the bottom action bar is hidden
-          by ParcelMap while fitOpen so there's room. */}
-      <div
-        className={cn(
-          'pointer-events-auto absolute top-16 left-3 right-3 max-h-[calc(100%-5rem)]',
-          'flex flex-col gap-3 overflow-y-auto brand-scroll',
-          // sm+: side-by-side panels.
-          'sm:flex-row sm:left-3 sm:right-3 sm:top-16 sm:bottom-3 sm:max-h-none',
-        )}
-      >
-        {/* Library + form */}
-        <div className="rounded-xl bg-surface/95 backdrop-blur border border-border-default p-3 space-y-3 sm:w-[300px] sm:flex-none">
+      {/* Desktop (sm+): side panels — form on the left, result on the right,
+          map fills the gap. */}
+      <div className="hidden sm:flex pointer-events-auto absolute top-16 left-3 right-3 bottom-3 flex-row gap-3">
+        <div className="w-[300px] flex-none rounded-xl bg-surface/95 backdrop-blur border border-border-default p-3 space-y-3 overflow-y-auto brand-scroll">
           <FootprintLibrary
             footprints={footprints}
             selectedId={selectedId}
@@ -254,8 +249,8 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
             onNew={onNew}
           />
           <FootprintForm
-            // key forces FootprintForm to remount with fresh state when the
-            // selection changes — avoids the prop-sync effect pattern.
+            // key remounts the form with fresh state when the user picks a
+            // different footprint — avoids a prop-sync effect.
             key={currentProject?.id ?? 'new'}
             initial={currentProject}
             onChange={onChange}
@@ -263,17 +258,78 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
             onDelete={currentProject ? onDelete : undefined}
           />
         </div>
-
-        {/* Map slot — flex spacer on desktop so result panel sits at far right.
-            On mobile the map is naturally visible behind this panel stack. */}
-        <div className="hidden sm:block flex-1" />
-
-        {/* Fit result */}
-        <div className="rounded-xl bg-surface/95 backdrop-blur border border-border-default p-3 sm:w-[320px] sm:flex-none">
+        <div className="flex-1" />
+        <div className="w-[320px] flex-none rounded-xl bg-surface/95 backdrop-blur border border-border-default p-3 overflow-y-auto brand-scroll">
           <FitResultPanel result={computed.result} subtitle={computed.subtitle} />
         </div>
       </div>
+
+      {/* Mobile (<sm): bottom sheet with two tabs. Map stays visible in the
+          top half of the screen so the user can pan around the parcel. The
+          host's bottom action bar is hidden while fitOpen, so the sheet has
+          the lower edge to itself. safe-bottom respects iOS home indicator. */}
+      <div className="sm:hidden pointer-events-auto absolute bottom-0 left-0 right-0 max-h-[60vh] flex flex-col rounded-t-2xl bg-surface/95 backdrop-blur border-t border-border-default safe-bottom">
+        <div role="tablist" aria-label="Building Fit panels" className="flex border-b border-border-subtle">
+          <MobileTab
+            label="Footprint"
+            active={mobileTab === 'footprint'}
+            onClick={() => setMobileTab('footprint')}
+          />
+          <MobileTab
+            label="Fit"
+            active={mobileTab === 'fit'}
+            onClick={() => setMobileTab('fit')}
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto brand-scroll p-3">
+          {mobileTab === 'footprint' && (
+            <div className="space-y-3">
+              <FootprintLibrary
+                footprints={footprints}
+                selectedId={selectedId}
+                onSelect={setExplicitId}
+                onNew={onNew}
+              />
+              <FootprintForm
+                key={currentProject?.id ?? 'new'}
+                initial={currentProject}
+                onChange={onChange}
+                onSave={onSave}
+                onDelete={currentProject ? onDelete : undefined}
+              />
+            </div>
+          )}
+          {mobileTab === 'fit' && (
+            <FitResultPanel result={computed.result} subtitle={computed.subtitle} />
+          )}
+        </div>
+      </div>
     </div>
+  )
+}
+
+function MobileTab({
+  label,
+  active,
+  onClick,
+}: {
+  label: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        'flex-1 h-11 text-xs font-semibold uppercase tracking-wider transition-colors',
+        active ? 'text-brand border-b-2 border-brand' : 'text-text-tertiary hover:text-text-primary',
+      )}
+    >
+      {label}
+    </button>
   )
 }
 
