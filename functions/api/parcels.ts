@@ -1,3 +1,17 @@
+// POST /api/parcels: spatial query against the Johnson City ArcGIS upstream.
+//
+// Accepts either a `polygon` ring (lasso path) or a bbox via
+// `{ west, south, east, north }` (default viewport path). County defaults
+// to `'ALL'` (cross-county). Everything user-supplied flows through
+// `_validate.ts` first. Returns GeoJSON capped at 2000 records.
+//
+// Cache: lasso responses are 30s, bbox responses are 60s; ArcGIS itself
+// gets a `cf.cacheTtl` hint of 60s (polygon) or 300s (bbox) to ease load
+// on the upstream during high-traffic windows.
+//
+// On upstream failure we log the body for our own observability but return
+// only a generic `502 Upstream error` so we never leak internal URLs.
+
 import { validateBbox, validateCounty, validatePolygonRing } from './_validate'
 
 const ARCGIS_URL = 'https://gis.johnsoncitytn.org/arcgis/rest/services/ParcelPublishing/TaxParcels/MapServer/0'

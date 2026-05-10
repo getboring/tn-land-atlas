@@ -243,6 +243,89 @@ The search input and the FilterSheet min-acres input use
 - Before claiming done: `npm run build` clean, `npx eslint .` clean, all
   E2E green.
 
+## Documentation conventions
+
+Every reader of this repo (human or agent) should be able to open any
+file and immediately answer four questions: what does this file do,
+what does it expose to the outside world, what does it assume, and
+what will break if I get it wrong. The conventions below are how we
+get that for free.
+
+### Module header
+
+Every non-test source file in `src/` and `functions/` opens with a
+short header block. Single-purpose modules can stay terse; complex
+modules use the four-section template.
+
+Minimal (small leaf modules, type-only re-exports):
+
+```ts
+// Brief, one-line description of what this module is.
+```
+
+Full (the template; aim for 6 to 20 lines):
+
+```ts
+// <Module title or file purpose>.
+//
+// Why this file exists in one or two sentences. What problem it
+// solves, what surface it owns, where it sits in the data flow.
+//
+// Public surface:
+// - <name>: <one line>
+// - <name>: <one line>
+//
+// Invariants / contracts (only when they're load-bearing):
+// - <thing that must hold for this module to work>
+//
+// Gotchas (only the ones that have already bitten us; cite the symptom):
+// - <pitfall and the workaround>
+```
+
+The header is for orientation, not exhaustive docs. If a section is
+empty, omit it; do not include placeholder text.
+
+### Public-export JSDoc
+
+Every exported function, type, interface, const, and React component
+gets a JSDoc block. The bar is:
+
+- A one-line summary of what it does or represents.
+- `@param` for non-obvious arguments (skip self-describing params like
+  `id: string`).
+- `@returns` whenever the return type isn't immediately clear from the
+  signature (so skip pure `(): string` but document `Result<T>` returns).
+- `@throws` whenever the function can throw a typed error category.
+- A short example block for any function whose call shape isn't obvious
+  from the signature.
+
+```ts
+/**
+ * Returns the price-per-acre for a parcel, or null when either input
+ * is missing or zero.
+ *
+ * @example
+ * pricePerAcre({ PRICE: 250000, CALC_ACRE: 2.5 }) // -> 100000
+ */
+export function pricePerAcre(p: ParcelProperties): number | null { ... }
+```
+
+Inline `//` comments stay for explaining *why* the code is structured
+the way it is, not what it does. If the comment paraphrases the code
+beneath it, delete the comment.
+
+### Doc drift is a bug
+
+If you change a public signature or behavior, you also change the
+JSDoc. CI doesn't enforce this; reviewers do. Stale docs are worse
+than no docs.
+
+### Tests count as documentation
+
+A well-named test (`'rejects negative widthFt'`) is often a better
+contract document than prose. Add tests at the same level of detail
+you'd expect from the JSDoc.
+
 ## Verification before "done"
 
 ```bash

@@ -1,3 +1,13 @@
+// POST /api/search: OWNER / ADDRESS / GISLINK LIKE search against ArcGIS.
+//
+// The user-supplied `query` field flows through `validateQuery` (charset
+// whitelist + LIKE-wildcard strip) and then through `escSql` (SQL quote
+// doubling, the ArcGIS standard escape). The combination of validation +
+// escape is intentional defense-in-depth; do not remove either.
+//
+// Response is GeoJSON capped at 2000 records. The UI further caps the
+// rendered list at 200 rows (see rule #15 in AGENTS.md).
+
 import { validateCounty, validateQuery } from './_validate'
 
 const ARCGIS_URL = 'https://gis.johnsoncitytn.org/arcgis/rest/services/ParcelPublishing/TaxParcels/MapServer/0'

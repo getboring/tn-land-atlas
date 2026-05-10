@@ -1,10 +1,38 @@
+// POST /api/property: enriched parcel data from Supabase keyed by parcelKey.
+//
+// The runtime client `@supabase/supabase-js` is intentionally NOT a dep of
+// this app; this file is the only place that talks to Supabase, via the
+// REST endpoint with the anon key. The four reads (buildings, valuations,
+// sales, property_entities -> entities) run in parallel. If any single
+// table errors we substitute an empty array so the parcel detail panel can
+// still render the parts that succeeded.
+//
+// When `SUPABASE_URL` / `SUPABASE_ANON_KEY` aren't configured the route
+// returns an empty payload with a short cache. This is the path for local
+// dev without secrets and for the "enriched data disabled" deploy mode.
+//
+// Security:
+// - parcelKey flows through validateQuery (charset + length) plus
+//   encodeURIComponent before composing into a Supabase URL.
+// - entity_id values pulled from property_entities are validated as UUIDs
+//   before being concatenated into the `in.(...)` filter. A compromise of
+//   that table would otherwise become a URL-injection path.
+
 import { validateQuery } from './_validate'
 
+/** Pages Function environment bindings for this route. */
 export interface Env {
+  /** Supabase project URL, e.g. https://abc.supabase.co. Set in CF dashboard. */
   SUPABASE_URL: string
+  /** Supabase anon (publishable) key. Set in CF dashboard. */
   SUPABASE_ANON_KEY: string
 }
 
+/**
+ * Run a Supabase REST select against `table` with the given query string.
+ * @throws on non-2xx response; callers wrap in `.catch(() => [])` so a
+ *   per-table failure degrades the response gracefully.
+ */
 async function supabaseSelect<T>(env: Env, table: string, query: string): Promise<T> {
   const url = new URL(`${env.SUPABASE_URL}/rest/v1/${table}`)
   url.search = query

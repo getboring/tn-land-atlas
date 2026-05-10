@@ -1,11 +1,37 @@
 // Shared input validators for /api/* Pages Functions.
-// ArcGIS already escapes our input correctly via doubled single quotes, but we
-// also constrain inputs to a known charset and the TN bounding box so a
-// malformed request fails fast at the edge instead of round-tripping to ArcGIS.
+//
+// Every Pages Function that accepts user input MUST run its inputs through
+// these validators before composing any downstream URL (ArcGIS, Supabase).
+// ArcGIS escapes single quotes correctly for us via doubling, but the goal
+// here is to fail fast at the edge so a malformed or hostile request never
+// reaches an upstream and so the upstream's narrower error budget is spent
+// only on requests that are at least plausibly real.
+//
+// Public surface:
+// - COUNTIES, County                   the whitelist + its TS union
+// - validateCounty(input)              -> County or null
+// - validateBbox(w, s, e, n)           -> normalized bbox or null
+// - validateQuery(input)               -> sanitized search string or null
+// - validatePolygonRing(input)         -> closed [lng, lat][] ring or null
+//
+// Invariants:
+// - Every validator returns null on any rejected input. Routes must treat
+//   null as a 400 Bad Request; do not pass nullable validator output forward.
+// - Numeric bounds use a generous TN bounding box. Requests outside that box
+//   are rejected even if they look syntactically valid.
 
+/** Counties the ArcGIS upstream supports. `'ALL'` is the cross-county default. */
 export const COUNTIES = ['ALL', 'Sullivan', 'Washington', 'Carter'] as const
+
+/** TS union derived from {@link COUNTIES}. */
 export type County = (typeof COUNTIES)[number]
 
+/**
+ * Narrow an untrusted value to a known {@link County}.
+ *
+ * @returns the validated county, or `null` for any input not in
+ *   {@link COUNTIES}. Callers should return `400 Invalid county` on null.
+ */
 export function validateCounty(input: unknown): County | null {
   return typeof input === 'string' && (COUNTIES as readonly string[]).includes(input)
     ? (input as County)
@@ -19,6 +45,13 @@ const TN_MAX_LON = -81.5
 const TN_MIN_LAT = 34.5
 const TN_MAX_LAT = 37.0
 
+/**
+ * Narrow four untrusted coordinates to a normalized TN-bounded bbox.
+ *
+ * @returns the bbox as `{ west, south, east, north }`, or `null` when any
+ *   coordinate is non-numeric, non-finite, falls outside the TN superset,
+ *   or fails the `west < east` / `south < north` ordering checks.
+ */
 export function validateBbox(
   west: unknown, south: unknown, east: unknown, north: unknown,
 ): { west: number; south: number; east: number; north: number } | null {
@@ -34,12 +67,21 @@ export function validateBbox(
 // appears in owner names and street addresses (apostrophes, ampersand, hyphen, etc.).
 const QUERY_RE = /^[a-zA-Z0-9 .,'#&\-/]{2,80}$/
 
+/**
+ * Trim, charset-check, and de-wildcard a user-supplied search string.
+ *
+ * The search route wraps the result in `%...%` for a LIKE match, so any `%`
+ * or `_` typed by the user is stripped here. The route is the only caller
+ * that needs the de-wildcarded form; nothing else should reuse it for an
+ * exact match.
+ *
+ * @returns the sanitized string (2 to 80 chars after trim, charset-bounded
+ *   and wildcard-stripped), or `null` when the input fails any check.
+ */
 export function validateQuery(input: unknown): string | null {
   if (typeof input !== 'string') return null
   const trimmed = input.trim()
   if (!QUERY_RE.test(trimmed)) return null
-  // Strip SQL LIKE wildcards from user input — the search wraps the query in
-  // %...% itself, so a user who types `%` shouldn't get to widen the pattern.
   return trimmed.replace(/[%_]/g, '')
 }
 
@@ -48,6 +90,18 @@ export function validateQuery(input: unknown): string | null {
 // outside our TN superset.
 const MAX_RING_VERTICES = 200
 
+/**
+ * Narrow an untrusted polygon ring to a closed `[lng, lat][]` array.
+ *
+ * Caps at {@link MAX_RING_VERTICES} so a hostile caller can't blow up ArcGIS
+ * request size. Vertices outside the TN superset are rejected the same way
+ * {@link validateBbox} rejects out-of-region bboxes. The returned ring is
+ * always closed (last point equals first); if the caller didn't close the
+ * ring themselves we close it here.
+ *
+ * @returns the validated ring, or `null` for any structural or out-of-range
+ *   failure. Callers should return `400 Invalid polygon` on null.
+ */
 export function validatePolygonRing(input: unknown): [number, number][] | null {
   if (!Array.isArray(input)) return null
   if (input.length < 4 || input.length > MAX_RING_VERTICES) return null
