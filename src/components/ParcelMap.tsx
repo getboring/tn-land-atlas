@@ -191,10 +191,10 @@ export default function ParcelMap() {
    *  thin mount/entry point per projects/buildplan2.md §Fit Mode Integration. */
   const [fitOpen, setFitOpen] = useState(false)
   /** Mirrors map.current as render-safe state when fit mode is open. The
-   *  cast is the structural map -> FitMapTarget escape; maplibregl's
-   *  discriminated AddLayerObject doesn't unify with our looser FitLayerSpec
-   *  at compile time, but they're shape-compatible at runtime. */
-  const [fitMap, setFitMap] = useState<import('@/lib/build-fit/map-layers').FitMapTarget | null>(null)
+   *  workspace expects a real maplibregl.Map (Day 4 drag handles use
+   *  on/off/getCanvasContainer), so no cast happens here; the workspace
+   *  applies a one-line cast at the map-layers helper boundary. */
+  const [fitMap, setFitMap] = useState<maplibregl.Map | null>(null)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [errorToast, setErrorToast] = useState<string | null>(null)
   const [drawMode, setDrawModeState] = useState<DrawMode>('idle')
@@ -799,11 +799,11 @@ export default function ParcelMap() {
 
   // Track map.current as state when fit mode is open so the workspace
   // mount predicate doesn't have to read the ref during render. setFitMap
-  // runs from inside an effect — allowed. Gate on fitOpen so the cast
-  // only happens when we actually need a FitMapTarget.
+  // runs from inside an effect (allowed). Gate on fitOpen so the lazy
+  // workspace only mounts when the user actually needs it.
   useEffect(() => {
     if (fitOpen) {
-      setFitMap(map.current as unknown as import('@/lib/build-fit/map-layers').FitMapTarget | null)
+      setFitMap(map.current)
     } else {
       setFitMap(null)
     }

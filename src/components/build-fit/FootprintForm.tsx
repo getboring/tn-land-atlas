@@ -107,15 +107,29 @@ export function FootprintForm({ initial, onChange, onSave, onDelete }: Footprint
 
       <Field label="Rotation (° from north, clockwise)">
         <div className="flex items-center gap-2">
-          <NumberInput value={values.rotationDeg} step={5} onChange={(n) => setField('rotationDeg', n)} />
-          <button
-            type="button"
-            onClick={() => setField('rotationDeg', 0)}
-            className="text-[11px] text-text-tertiary hover:text-white px-2 h-9 rounded-lg hover:bg-white/5"
-            title="Reset rotation"
-          >
-            Reset
-          </button>
+          <NumberInput value={values.rotationDeg} step={5} onChange={(n) => setField('rotationDeg', normalizeAngle(n))} />
+          <div className="flex items-center gap-1">
+            <RotateBump
+              label="-15°"
+              onClick={() => setField('rotationDeg', normalizeAngle(values.rotationDeg - 15))}
+            />
+            <RotateBump
+              label="+15°"
+              onClick={() => setField('rotationDeg', normalizeAngle(values.rotationDeg + 15))}
+            />
+            <RotateBump
+              label="+90°"
+              onClick={() => setField('rotationDeg', normalizeAngle(values.rotationDeg + 90))}
+            />
+            <button
+              type="button"
+              onClick={() => setField('rotationDeg', 0)}
+              className="text-[11px] text-text-tertiary hover:text-white px-2 h-9 rounded-lg hover:bg-white/5"
+              title="Reset rotation"
+            >
+              Reset
+            </button>
+          </div>
         </div>
       </Field>
 
@@ -178,6 +192,27 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </label>
   )
+}
+
+function RotateBump({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center justify-center h-9 px-2 min-w-[42px] rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10 data-value"
+      title={`Rotate ${label}`}
+    >
+      {label}
+    </button>
+  )
+}
+
+function normalizeAngle(a: number): number {
+  // Keep rotationDeg in [-180, 180] so display + serialization read sanely.
+  let n = a % 360
+  if (n > 180) n -= 360
+  if (n < -180) n += 360
+  return n
 }
 
 function NumberInput({

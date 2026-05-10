@@ -14,7 +14,7 @@
 //   conflict     red warning
 //   unknown      neutral gray with explanation
 
-import { Check, AlertTriangle, Info } from 'lucide-react'
+import { Check, AlertTriangle, Info, Save, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export interface FitResultDisplay {
@@ -31,9 +31,24 @@ interface FitResultPanelProps {
   result: FitResultDisplay
   /** Light copy describing the current footprint name + dims. */
   subtitle?: string | null
+  /** Phase 2: persist a FitSession with the current placement. */
+  onSavePlacement?: () => void
+  /** Phase 2: clear user-positioned center, return to parcel centroid. */
+  onResetCenter?: () => void
+  /** True when the user has dragged the footprint off the default centroid. */
+  centerOverridden?: boolean
+  /** Brief flash after a successful Save Placement. */
+  savedFlash?: boolean
 }
 
-export function FitResultPanel({ result, subtitle }: FitResultPanelProps) {
+export function FitResultPanel({
+  result,
+  subtitle,
+  onSavePlacement,
+  onResetCenter,
+  centerOverridden = false,
+  savedFlash = false,
+}: FitResultPanelProps) {
   const { fitsParcel, footprintSqft, parcelSqft, coveragePct, closestBoundaryFt, warnings } = result
   const status = statusOf(fitsParcel, footprintSqft != null)
 
@@ -88,6 +103,40 @@ export function FitResultPanel({ result, subtitle }: FitResultPanelProps) {
           Setback envelope check arrives in the next release.
         </div>
       </div>
+
+      {/* 6. Actions, Phase 2: Save Placement + Reset Center. */}
+      {(onSavePlacement || onResetCenter) && (
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {onSavePlacement && (
+            <button
+              type="button"
+              onClick={onSavePlacement}
+              disabled={status !== 'fits' && status !== 'conflict'}
+              className={cn(
+                'inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-xs font-semibold transition-colors',
+                status === 'pending'
+                  ? 'bg-white/5 text-text-tertiary cursor-not-allowed'
+                  : savedFlash
+                    ? 'bg-success/20 text-success border border-success/40'
+                    : 'bg-brand text-white hover:bg-brand-strong hover:text-text-inverse',
+              )}
+            >
+              {savedFlash ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+              {savedFlash ? 'Placement saved' : 'Save placement'}
+            </button>
+          )}
+          {onResetCenter && centerOverridden && (
+            <button
+              type="button"
+              onClick={onResetCenter}
+              className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-[11px] text-text-tertiary hover:text-white hover:bg-white/10"
+              title="Recenter footprint on parcel"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Reset center
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 7. Disclaimer */}
       <div className="text-[10px] text-text-tertiary leading-snug pt-1 border-t border-border-subtle">

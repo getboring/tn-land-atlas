@@ -459,6 +459,77 @@ test.describe('Holston Scout', () => {
     await expect(page.getByText('Setback envelope check arrives in the next release.')).toBeVisible()
   })
 
+  test('rotation quick-buttons update the footprint geometry', async ({ page }) => {
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    // Capture the footprint coordinates before bumping rotation.
+    const before = await page.evaluate(() => {
+      const m = (
+        window as unknown as {
+          __map__?: { querySourceFeatures: (id: string) => Array<{ geometry: { coordinates: number[][][] } }> }
+        }
+      ).__map__
+      if (!m) return null
+      const features = m.querySourceFeatures('fit-footprint')
+      return features[0]?.geometry?.coordinates?.[0]?.[0] ?? null
+    })
+    expect(before).not.toBeNull()
+
+    // Click the +90° quick-button.
+    await page.getByRole('button', { name: 'Rotate +90°' }).click()
+
+    // Geometry should have moved as a result of the rotation.
+    await expect
+      .poll(async () =>
+        await page.evaluate(() => {
+          const m = (
+            window as unknown as {
+              __map__?: { querySourceFeatures: (id: string) => Array<{ geometry: { coordinates: number[][][] } }> }
+            }
+          ).__map__
+          if (!m) return null
+          return m.querySourceFeatures('fit-footprint')[0]?.geometry?.coordinates?.[0]?.[0] ?? null
+        }),
+        { timeout: 4000 },
+      )
+      .not.toEqual(before)
+  })
+
+  test('Save placement persists a FitSession in localStorage', async ({ page }) => {
+    // Wipe storage and start fresh.
+    await page.goto('/?lng=-82.3534&lat=36.3134&z=16')
+    await page.evaluate(() => window.localStorage.removeItem('holston-scout/build-fit/v1'))
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    // Need a name in the form, Save Placement auto-saves the footprint.
+    await page.locator('[data-fit-workspace] input[type="text"]').first().fill('Save-test shop')
+
+    // Click Save placement.
+    await page.getByRole('button', { name: /^Save placement$/ }).click()
+
+    // Brief saved-flash, button text changes.
+    await expect(page.getByRole('button', { name: /Placement saved/ })).toBeVisible({ timeout: 2000 })
+
+    // Storage holds at least one FootprintProject + one FitSession.
+    const stored = await page.evaluate(() => {
+      const raw = window.localStorage.getItem('holston-scout/build-fit/v1')
+      return raw ? JSON.parse(raw) : null
+    })
+    expect(stored).not.toBeNull()
+    expect(stored.schemaVersion).toBe(1)
+    expect(stored.footprints?.length).toBeGreaterThan(0)
+    expect(stored.sessions?.length).toBeGreaterThan(0)
+    expect(stored.sessions[0].footprintProjectId).toBe(stored.footprints[0].id)
+    expect(stored.sessions[0].placement.geometry.type).toBe('Polygon')
+    expect(stored.sessions[0].result.measurementMethod).toBe('geodesic')
+  })
+
   test('Tools popover still works after entering and exiting fit mode', async ({ page }) => {
     await loadParcelsAt(page, -82.3534, 36.3134, 16)
     await clickFirstParcel(page)

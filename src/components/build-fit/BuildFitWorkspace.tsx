@@ -6,18 +6,25 @@
 // Lifecycle:
 //   Mount         install fit-* layers + sources via map-layers helpers
 //   Form change   rectangle + fit math + setData updates
+//   Drag handle   pointer/touch events on fit-footprint-handles update
+//                 userCenter; the same compute path re-runs and pushes a
+//                 fresh footprint geometry to the map
+//   Save place    upsertFootprint + upsertSession in one click; if no
+//                 footprint template exists we auto-save it first
 //   Unmount       clear fit sources (layers stay installed for re-entry)
 //   Parcel clear  ParcelMap closes us via onClose
 //
-// What this file does NOT do (per Day 3 scope):
+// What this file does NOT do (Phase 3+):
 //   No setbacks (Phase 3).
-//   No drag/rotate handles (Phase 2; numeric rotation is supported).
-//   No "Save placement", saving the FitSession is Phase 4.
-//   No Send-to-Builder.
+//   No setback envelope drawing (Phase 3).
+//   No project-file export/import (Phase 4).
+//   No print/PDF report (Phase 5).
+//   No Send-to-Builder (much later).
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { ulid } from 'ulidx'
+import type maplibregl from 'maplibre-gl'
 import { cn } from '@/lib/utils'
 import type { ParcelFeature } from '@/lib/arcgis'
 import {
@@ -28,6 +35,8 @@ import {
 } from '@/lib/build-fit/map-layers'
 import {
   PolygonOrMultiSchema,
+  type FitResult,
+  type FitSession,
   type FootprintProject,
   type Polygon,
   type PolygonOrMulti,
@@ -42,15 +51,32 @@ import {
   normalizeParcel,
   defaultFootprintCenter,
 } from '@/lib/build-fit/geometry'
-import { useFootprints, upsertFootprint, removeFootprint } from '@/lib/build-fit/storage'
+import {
+  useFootprints,
+  upsertFootprint,
+  removeFootprint,
+  upsertSession,
+} from '@/lib/build-fit/storage'
 import { FootprintLibrary } from './FootprintLibrary'
 import { FootprintForm, type FootprintFormValues } from './FootprintForm'
 import { FitResultPanel, type FitResultDisplay } from './FitResultPanel'
 
 interface BuildFitWorkspaceProps {
-  map: FitMapTarget
+  /** Real maplibregl.Map. Day 4 drag handles need `on/off/getCanvasContainer`,
+   *  so the prop is the live Map instance, not the narrowed FitMapTarget.
+   *  The structural cast happens at the map-layers helper boundary below. */
+  map: maplibregl.Map
   parcel: ParcelFeature
   onClose: () => void
+}
+
+// One cast in one place. map-layers helpers expect FitMapTarget (the
+// narrow seam). The real maplibregl.Map is structurally compatible at
+// runtime; the discriminated AddLayerObject doesn't unify with our
+// FitLayerSpec at compile time, so we erase the type at this boundary
+// only.
+function asFitTarget(m: maplibregl.Map): FitMapTarget {
+  return m as unknown as FitMapTarget
 }
 
 export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWorkspaceProps) {
@@ -72,8 +98,8 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
   // projects/buildplan2.md). beforeId falls back gracefully if the host
   // ever renames that layer.
   useEffect(() => {
-    installFitLayers(map, { beforeId: 'parcel-corners' })
-    return () => clearFitLayers(map)
+    installFitLayers(asFitTarget(map), { beforeId: 'parcel-corners' })
+    return () => clearFitLayers(asFitTarget(map))
   }, [map])
 
   const footprints = useFootprints()
@@ -96,9 +122,36 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
     [footprints, selectedId],
   )
 
-  // ── Compute fit on every form change ──────────────────────────────────────
+  // ── Day 4 placement: user-positioned center ──────────────────────────────
+  // null means "use parcel centroid (default)." Drag updates this.
+  // Switching footprints clears it back to default — each footprint starts
+  // centered. The reset is wired into the selection setter (selectFootprint)
+  // below so we never sync userCenter via a watcher effect.
+  const [userCenter, setUserCenter] = useState<[number, number] | null>(null)
+
+  // Saved-confirmation flash for the Save Placement button. Cleared by a
+  // timeout scheduled from the save handler itself (not from an effect)
+  // so the pattern stays out of react-hooks/set-state-in-effect.
+  const [placementSavedAt, setPlacementSavedAt] = useState<number | null>(null)
+  const savedFlashTimeoutRef = useRef<number | null>(null)
+
+  // Single setter that owns selection-side-effects: clear userCenter so a
+  // new footprint starts at the parcel centroid; clear any saved-flash to
+  // avoid stale confirmation on the wrong project.
+  const selectFootprint = useCallback((id: string | 'NEW' | null) => {
+    setExplicitId(id)
+    setUserCenter(null)
+    setPlacementSavedAt(null)
+    if (savedFlashTimeoutRef.current != null) {
+      window.clearTimeout(savedFlashTimeoutRef.current)
+      savedFlashTimeoutRef.current = null
+    }
+  }, [])
+
+  // ── Compute fit on every form / center change ────────────────────────────
   const computed = useMemo<{
     footprintGeom: Polygon | null
+    center: [number, number] | null
     result: FitResultDisplay
     subtitle: string | null
   }>(() => {
@@ -111,18 +164,20 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       warnings: [],
     }
     if (!validated.ok) {
-      return { footprintGeom: null, result: { ...empty, warnings: [validated.error] }, subtitle: null }
+      return { footprintGeom: null, center: null, result: { ...empty, warnings: [validated.error] }, subtitle: null }
     }
     if (!draftValues || draftValues.widthFt < 1 || draftValues.lengthFt < 1) {
-      return { footprintGeom: null, result: empty, subtitle: null }
+      return { footprintGeom: null, center: null, result: empty, subtitle: null }
     }
     // Picks the largest part for centroid (display + default placement),
     // attaches a warning if the parcel was a MultiPolygon.
     const norm = normalizeParcel(validated.geom)
-    const center = defaultFootprintCenter(norm.full)
+    const fallback = defaultFootprintCenter(norm.full)
+    const center = userCenter ?? fallback
     if (!center) {
       return {
         footprintGeom: null,
+        center: null,
         result: { ...empty, warnings: ['Parcel centroid unavailable for default placement.'] },
         subtitle: null,
       }
@@ -142,6 +197,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
     if (norm.warning) warnings.push(norm.warning)
     return {
       footprintGeom: geom,
+      center,
       result: {
         fitsParcel,
         footprintSqft: fpSqft,
@@ -152,18 +208,91 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       },
       subtitle: `${draftValues.widthFt} × ${draftValues.lengthFt} ft @ ${draftValues.rotationDeg}°`,
     }
-  }, [validated, draftValues])
+  }, [validated, draftValues, userCenter])
 
-  // ── Push computed footprint to the map ────────────────────────────────────
+  // ── Push computed footprint + center handle to the map ──────────────────
   useEffect(() => {
-    if (computed.footprintGeom) {
-      updateFitLayers(map, {
+    if (computed.footprintGeom && computed.center) {
+      updateFitLayers(asFitTarget(map), {
         footprint: { geometry: computed.footprintGeom, valid: computed.result.fitsParcel ?? true },
+        handles: {
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: computed.center },
+              properties: { role: 'center' },
+            },
+          ],
+        },
       })
     } else {
-      updateFitLayers(map, { footprint: null })
+      updateFitLayers(asFitTarget(map), { footprint: null, handles: null })
     }
   }, [map, computed])
+
+  // ── Drag handle: move the footprint by dragging its center ──────────────
+  // Real maplibregl events (not Terra Draw, which would clash with the
+  // lasso/ruler instance per buildplan2 rule #7). Mouse + touch parity for
+  // tablet / phone. Custom GeoJSON layer interaction, no editor library.
+  const draggingRef = useRef(false)
+  useEffect(() => {
+    const canvas = map.getCanvasContainer()
+    if (!canvas) return
+
+    const onEnter = () => {
+      if (!draggingRef.current) canvas.style.cursor = 'move'
+    }
+    const onLeave = () => {
+      if (!draggingRef.current) canvas.style.cursor = ''
+    }
+    const setCenterFromEvent = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
+      setUserCenter([e.lngLat.lng, e.lngLat.lat])
+    }
+    const startDrag = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
+      e.preventDefault()
+      draggingRef.current = true
+      canvas.style.cursor = 'grabbing'
+      // Disable map pan/zoom while dragging — without this, the map would
+      // pan along with the cursor and the handle would never catch up.
+      map.dragPan.disable()
+    }
+    const onMove = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
+      if (!draggingRef.current) return
+      setCenterFromEvent(e)
+    }
+    const onEnd = () => {
+      if (!draggingRef.current) return
+      draggingRef.current = false
+      canvas.style.cursor = ''
+      map.dragPan.enable()
+    }
+
+    map.on('mouseenter', 'fit-footprint-handles', onEnter)
+    map.on('mouseleave', 'fit-footprint-handles', onLeave)
+    map.on('mousedown', 'fit-footprint-handles', startDrag)
+    map.on('touchstart', 'fit-footprint-handles', startDrag)
+    map.on('mousemove', onMove)
+    map.on('touchmove', onMove)
+    map.on('mouseup', onEnd)
+    map.on('touchend', onEnd)
+
+    return () => {
+      map.off('mouseenter', 'fit-footprint-handles', onEnter)
+      map.off('mouseleave', 'fit-footprint-handles', onLeave)
+      map.off('mousedown', 'fit-footprint-handles', startDrag)
+      map.off('touchstart', 'fit-footprint-handles', startDrag)
+      map.off('mousemove', onMove)
+      map.off('touchmove', onMove)
+      map.off('mouseup', onEnd)
+      map.off('touchend', onEnd)
+      canvas.style.cursor = ''
+      // Re-enable in case a drag was in flight at unmount.
+      map.dragPan.enable()
+    }
+  }, [map])
+
+  const onResetCenter = useCallback(() => setUserCenter(null), [])
 
   // ── Form handlers ─────────────────────────────────────────────────────────
   const onChange = useCallback((next: FootprintFormValues) => {
@@ -196,23 +325,127 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         updatedAt: now,
       }
       upsertFootprint(project)
-      setExplicitId(id)
+      selectFootprint(id)
     },
-    [currentProject, computed],
+    [currentProject, computed, selectFootprint],
   )
 
   const onDelete = useCallback(() => {
     if (!currentProject) return
     removeFootprint(currentProject.id)
-    setExplicitId(null)
+    selectFootprint(null)
     setDraftValues(null)
-    updateFitLayers(map, { footprint: null })
-  }, [currentProject, map])
+    updateFitLayers(asFitTarget(map), { footprint: null })
+  }, [currentProject, map, selectFootprint])
 
   const onNew = useCallback(() => {
-    setExplicitId('NEW')
+    selectFootprint('NEW')
     setDraftValues(null)
+  }, [selectFootprint])
+
+  // ── Save placement, persists the current placement on this parcel as a
+  // FitSession. If the user has not yet saved a footprint template, we
+  // auto-save it first so the session has a stable footprintProjectId to
+  // reference. Returns silently when the math hasn't produced a geometry.
+  const onSavePlacement = useCallback(() => {
+    if (!computed.footprintGeom || !computed.center || !validated.ok || !draftValues) return
+    if (draftValues.widthFt < 1 || draftValues.lengthFt < 1) return
+    if (!draftValues.name.trim()) return // need a name to label the auto-saved template
+
+    const now = new Date().toISOString()
+
+    // 1. Make sure a FootprintProject exists for this draft.
+    let footprintProjectId = currentProject?.id
+    if (!footprintProjectId) {
+      footprintProjectId = ulid()
+      const project: FootprintProject = {
+        id: footprintProjectId,
+        name: draftValues.name.trim(),
+        kind: 'rectangle',
+        widthFt: draftValues.widthFt,
+        lengthFt: draftValues.lengthFt,
+        rotationDeg: draftValues.rotationDeg,
+        stories: draftValues.stories,
+        footprintSqft: computed.result.footprintSqft ?? draftValues.widthFt * draftValues.lengthFt,
+        geometry: computed.footprintGeom,
+        createdFrom: 'typed-dimensions',
+        notes: draftValues.notes,
+        createdAt: now,
+        updatedAt: now,
+      }
+      upsertFootprint(project)
+      selectFootprint(footprintProjectId)
+    }
+
+    // 2. Build the FitResult from the current display data.
+    const result: FitResult = {
+      status: computed.result.fitsParcel === false ? 'conflict' : 'fits',
+      fitsParcel: computed.result.fitsParcel ?? false,
+      fitsEnvelope: null,
+      footprintSqft: computed.result.footprintSqft ?? 0,
+      parcelSqft: computed.result.parcelSqft,
+      coveragePct: computed.result.coveragePct,
+      closestBoundaryFt: computed.result.closestBoundaryFt,
+      measurementMethod: 'geodesic',
+      conflicts: [],
+      warnings: computed.result.warnings,
+      computedAt: now,
+    }
+
+    // 3. ParcelFitSnapshot from the live ParcelFeature.
+    const p = parcel.properties
+    const snapshot = {
+      parcelKey: p.GISLINK ?? '',
+      ownerName: p.OWNER ?? null,
+      address: p.ADDRESS ?? null,
+      county: p.COUNTYNAME ?? null,
+      acres: p.CALC_ACRE ?? null,
+      zoning: p.ZONING ?? null,
+      appraisalDollars: p.APPRAISAL ?? null,
+      geometry: validated.geom,
+      capturedAt: now,
+    }
+    if (!snapshot.parcelKey) return // can't reference without a key
+
+    // 4. Persist the FitSession.
+    const session: FitSession = {
+      id: ulid(),
+      parcelKey: snapshot.parcelKey,
+      parcelSnapshot: snapshot,
+      footprintProjectId,
+      placement: {
+        center: { lng: computed.center[0], lat: computed.center[1] },
+        rotationDeg: draftValues.rotationDeg,
+        widthFt: draftValues.widthFt,
+        lengthFt: draftValues.lengthFt,
+        geometry: computed.footprintGeom,
+      },
+      setbackConfig: { mode: 'none' },
+      envelope: { mode: 'none', geometry: null, warnings: [] },
+      result,
+      createdAt: now,
+      updatedAt: now,
+    }
+    upsertSession(session)
+    setPlacementSavedAt(Date.now())
+    if (savedFlashTimeoutRef.current != null) {
+      window.clearTimeout(savedFlashTimeoutRef.current)
+    }
+    savedFlashTimeoutRef.current = window.setTimeout(() => {
+      setPlacementSavedAt(null)
+      savedFlashTimeoutRef.current = null
+    }, 1500)
+  }, [computed, currentProject, draftValues, parcel, validated, selectFootprint])
+
+  // Make sure a pending flash-clear can't fire after unmount.
+  useEffect(() => {
+    return () => {
+      if (savedFlashTimeoutRef.current != null) {
+        window.clearTimeout(savedFlashTimeoutRef.current)
+      }
+    }
   }, [])
+
 
   // Mobile-only tab. Desktop renders both panels side-by-side; mobile shows
   // one at a time inside a bottom sheet so the map stays visible above.
@@ -253,7 +486,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
           <FootprintLibrary
             footprints={footprints}
             selectedId={selectedId}
-            onSelect={setExplicitId}
+            onSelect={selectFootprint}
             onNew={onNew}
           />
           <FootprintForm
@@ -268,7 +501,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         </div>
         <div className="flex-1" />
         <div className="w-[320px] flex-none rounded-xl bg-surface/95 backdrop-blur border border-border-default p-3 overflow-y-auto brand-scroll">
-          <FitResultPanel result={computed.result} subtitle={computed.subtitle} />
+          <FitResultPanel result={computed.result} subtitle={computed.subtitle} onSavePlacement={onSavePlacement} onResetCenter={onResetCenter} centerOverridden={userCenter != null} savedFlash={placementSavedAt != null} />
         </div>
       </div>
 
@@ -295,7 +528,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
               <FootprintLibrary
                 footprints={footprints}
                 selectedId={selectedId}
-                onSelect={setExplicitId}
+                onSelect={selectFootprint}
                 onNew={onNew}
               />
               <FootprintForm
@@ -308,7 +541,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
             </div>
           )}
           {mobileTab === 'fit' && (
-            <FitResultPanel result={computed.result} subtitle={computed.subtitle} />
+            <FitResultPanel result={computed.result} subtitle={computed.subtitle} onSavePlacement={onSavePlacement} onResetCenter={onResetCenter} centerOverridden={userCenter != null} savedFlash={placementSavedAt != null} />
           )}
         </div>
       </div>
