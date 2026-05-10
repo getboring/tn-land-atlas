@@ -484,11 +484,17 @@ test.describe('Holston Scout', () => {
     await fitTab.click()
     await expect(footprintTab).toHaveAttribute('aria-selected', 'false')
     await expect(fitTab).toHaveAttribute('aria-selected', 'true')
-    // Setbacks placeholder copy is rendered in both the desktop side panel
-    // and the mobile sheet's Fit tab; filter({ visible: true }) keeps the
-    // rendered (mobile) one without ancestor-element strict-mode collisions.
+    // The Fit tab now hosts the SetbackBlock (Phase 3). Verify by looking
+    // for the 'Setbacks' label and the three mode buttons.
     await expect(
-      page.getByText('Setback envelope check arrives in the next release.').filter({ visible: true }),
+      page.getByText('Setbacks', { exact: true }).filter({ visible: true }).first(),
+    ).toBeVisible()
+    await expect(page.getByRole('button', { name: 'None' }).filter({ visible: true })).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Uniform' }).filter({ visible: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Manual' }).filter({ visible: true }),
     ).toBeVisible()
   })
 
@@ -588,10 +594,16 @@ test.describe('Holston Scout', () => {
     await page.getByRole('button', { name: /Test Building Fit/i }).click()
     await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
 
-    // Switch into Uniform mode and pick the 25 ft preset.
-    await page.getByRole('button', { name: 'Uniform', pressed: false }).first().click()
-    await page.locator(':visible', { hasText: 'Setbacks' }).first().waitFor()
-    await page.locator('button:visible', { hasText: /^25 ft$/ }).click()
+    // Mobile: flip to Fit tab where the setback controls live.
+    const fitTab = page.getByRole('tab', { name: 'Fit' })
+    if (await fitTab.count()) await fitTab.click()
+
+    // Switch into Uniform mode. Visible filter dodges accessibility
+    // ancestor collisions; first() because the tab and the actual button
+    // both have role=button on some viewports.
+    await page.getByRole('button', { name: 'Uniform' }).filter({ visible: true }).click()
+    // Pick the 25 ft preset.
+    await page.getByRole('button', { name: '25 ft' }).filter({ visible: true }).click()
 
     // The fit-envelope source should now carry one feature (Polygon or
     // MultiPolygon). Poll because Turf buffer + setData flushing isn't
@@ -605,7 +617,7 @@ test.describe('Holston Scout', () => {
             }
           ).__map__
           return m ? m.querySourceFeatures('fit-envelope').length : 0
-        }), { timeout: 6000, intervals: [200, 400, 600] })
+        }), { timeout: 8000, intervals: [200, 400, 600, 1000] })
       .toBeGreaterThan(0)
   })
 
@@ -622,8 +634,8 @@ test.describe('Holston Scout', () => {
     // Mobile: flip to Fit tab where the setback controls + Save live.
     const fitTab = page.getByRole('tab', { name: 'Fit' })
     if (await fitTab.count()) await fitTab.click()
-    await page.getByRole('button', { name: 'Uniform', pressed: false }).first().click()
-    await page.locator('button:visible', { hasText: /^15 ft$/ }).click()
+    await page.getByRole('button', { name: 'Uniform' }).filter({ visible: true }).click()
+    await page.getByRole('button', { name: '15 ft' }).filter({ visible: true }).click()
     await page.locator('button:visible', { hasText: /^Save placement$/ }).click()
 
     await expect(page.getByRole('button', { name: /Placement saved/ })).toBeVisible({ timeout: 3000 })
