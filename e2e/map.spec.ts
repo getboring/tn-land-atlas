@@ -404,6 +404,61 @@ test.describe('Holston Scout', () => {
     await expect(page.locator('[data-fit-workspace]')).toHaveCount(0)
   })
 
+  test('saving a footprint adds it to the library and persists across reload', async ({ page }) => {
+    // Wipe localStorage so the test starts with an empty library.
+    await page.goto('/?lng=-82.3534&lat=36.3134&z=16')
+    await page.evaluate(() => window.localStorage.removeItem('holston-scout/build-fit/v1'))
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    // Type a name, change rotation to 45, and save. The default 40 x 60 width
+    // and length stay; the form's mount-time onChange has already populated
+    // the draft so save can complete with valid geometry.
+    await page.locator('[data-fit-workspace] input[type="text"]').first().fill('40 x 60 shop')
+    const rotationInput = page.locator('[data-fit-workspace] input[type="number"]').nth(2)
+    await rotationInput.fill('45')
+    await page.getByRole('button', { name: /^Save footprint$/i }).click()
+
+    // The library now contains the saved footprint as a list item.
+    await expect(page.getByRole('button', { name: /40 x 60 shop/ })).toBeVisible()
+
+    // Reload, re-open the same parcel + fit mode, the library still has it.
+    await page.reload()
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+    await expect(page.getByRole('button', { name: /40 x 60 shop/ })).toBeVisible()
+
+    // Selecting the saved footprint preserves rotation. Auto-selection on
+    // re-open already loads it, so just read the rotation field.
+    const rotationAfter = page.locator('[data-fit-workspace] input[type="number"]').nth(2)
+    await expect(rotationAfter).toHaveValue('45')
+  })
+
+  test('mobile bottom sheet exposes Footprint and Fit tabs', async ({ page, isMobile }) => {
+    test.skip(!isMobile, 'mobile-only layout')
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    const footprintTab = page.getByRole('tab', { name: 'Footprint' })
+    const fitTab = page.getByRole('tab', { name: 'Fit' })
+    await expect(footprintTab).toBeVisible()
+    await expect(fitTab).toBeVisible()
+    await expect(footprintTab).toHaveAttribute('aria-selected', 'true')
+
+    // Tap Fit, the Save footprint button (footprint-tab content) hides and
+    // the Setbacks placeholder (fit-tab content) shows.
+    await fitTab.click()
+    await expect(footprintTab).toHaveAttribute('aria-selected', 'false')
+    await expect(fitTab).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByText('Setback envelope check arrives in the next release.')).toBeVisible()
+  })
+
   test('Tools popover still works after entering and exiting fit mode', async ({ page }) => {
     await loadParcelsAt(page, -82.3534, 36.3134, 16)
     await clickFirstParcel(page)
