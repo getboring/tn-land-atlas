@@ -15,8 +15,14 @@
 
 import area from '@turf/area'
 import destination from '@turf/destination'
-import { polygon as turfPolygon, point as turfPoint, lineString as turfLineString } from '@turf/helpers'
+import {
+  polygon as turfPolygon,
+  multiPolygon as turfMultiPolygon,
+  point as turfPoint,
+  lineString as turfLineString,
+} from '@turf/helpers'
 import booleanWithin from '@turf/boolean-within'
+import buffer from '@turf/buffer'
 import pointToLineDistance from '@turf/point-to-line-distance'
 import { centroid as parcelCentroid } from '@/lib/insights'
 import type { Polygon, PolygonOrMulti } from './schemas'
@@ -272,6 +278,62 @@ function formatFt(n: number): string {
 
 function formatSqft(n: number): string {
   return Math.round(n).toLocaleString()
+}
+
+// ── Setback envelope (uniform, planning-only) ──────────────────────────────
+// Inward offset of a parcel by `setbackFt` feet using Turf's geodesic buffer
+// (negative distance). This is a PLANNING ESTIMATE only: Turf buffer
+// rounds inset corners and is uniform on every edge regardless of front
+// / side / rear classification. True buildable envelopes need straight-
+// line half-plane clipping + zoning edge analysis (Phase 6).
+//
+// Returns:
+//   null         the setback is zero or negative, or the envelope
+//                degenerated (e.g. setback > half the parcel's narrowest
+//                dimension and the buffer collapses to nothing).
+//   Polygon      the inset envelope.
+//   MultiPolygon if a Polygon parcel split into multiple parts during
+//                the inset (rare but possible for waisted/L-shaped lots).
+
+export function setbackEnvelope(
+  parcel: PolygonOrMulti,
+  setbackFt: number,
+): PolygonOrMulti | null {
+  if (!Number.isFinite(setbackFt) || setbackFt <= 0) return null
+  const setbackKm = (setbackFt * METERS_PER_FOOT) / 1000
+  const input =
+    parcel.type === 'Polygon'
+      ? turfPolygon(parcel.coordinates)
+      : turfMultiPolygon(parcel.coordinates)
+  try {
+    const result = buffer(input, -setbackKm, { units: 'kilometers' })
+    if (!result || !result.geometry) return null
+    const g = result.geometry
+    if (g.type === 'Polygon') {
+      // Reject degenerate rings (Turf can produce <4-coord rings on
+      // near-collapse cases that downstream Turf calls then crash on).
+      const ring = g.coordinates[0]
+      if (!ring || ring.length < 4) return null
+      return { type: 'Polygon', coordinates: g.coordinates as number[][][] }
+    }
+    if (g.type === 'MultiPolygon') {
+      const parts = (g.coordinates as number[][][][]).filter(
+        (part) => part[0] && part[0].length >= 4,
+      )
+      if (parts.length === 0) return null
+      return { type: 'MultiPolygon', coordinates: parts }
+    }
+    return null
+  } catch {
+    // Turf throws on truly degenerate inputs (zero-area parcel, ring with
+    // <3 distinct vertices). Treat as 'no envelope.'
+    return null
+  }
+}
+
+/** Envelope area in sqft, summing every part. */
+export function envelopeAreaSqft(envelope: PolygonOrMulti): number {
+  return parcelAreaSqft(envelope)
 }
 
 // Re-exports so consumers don't need separate imports.

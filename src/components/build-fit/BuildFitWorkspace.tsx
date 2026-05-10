@@ -35,11 +35,13 @@ import {
 } from '@/lib/build-fit/map-layers'
 import {
   PolygonOrMultiSchema,
+  type BuildableEnvelope,
   type FitResult,
   type FitSession,
   type FootprintProject,
   type Polygon,
   type PolygonOrMulti,
+  type SetbackConfig,
 } from '@/lib/build-fit/schemas'
 import {
   rectangleFromDimensions,
@@ -51,6 +53,8 @@ import {
   normalizeParcel,
   defaultFootprintCenter,
   footprintLabels,
+  setbackEnvelope,
+  envelopeAreaSqft,
 } from '@/lib/build-fit/geometry'
 import {
   useFootprints,
@@ -130,6 +134,12 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
   // below so we never sync userCenter via a watcher effect.
   const [userCenter, setUserCenter] = useState<[number, number] | null>(null)
 
+  // Phase 3 setback config. Default: 'none'. Switching footprints does NOT
+  // reset this — setback is parcel-scoped, not footprint-scoped (the user
+  // probably wants the same setback to apply across different building
+  // shapes on the same parcel).
+  const [setbackConfig, setSetbackConfig] = useState<SetbackConfig>({ mode: 'none' })
+
   // Saved-confirmation flash for the Save Placement button. Cleared by a
   // timeout scheduled from the save handler itself (not from an effect)
   // so the pattern stays out of react-hooks/set-state-in-effect.
@@ -153,22 +163,33 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
   const computed = useMemo<{
     footprintGeom: Polygon | null
     center: [number, number] | null
+    envelope: BuildableEnvelope
     result: FitResultDisplay
     subtitle: string | null
   }>(() => {
     const empty: FitResultDisplay = {
       fitsParcel: null,
+      fitsEnvelope: null,
       footprintSqft: null,
       parcelSqft: null,
+      envelopeSqft: null,
       coveragePct: null,
       closestBoundaryFt: null,
       warnings: [],
     }
+    const emptyEnvelope: BuildableEnvelope = { mode: 'none', geometry: null, warnings: [] }
+
     if (!validated.ok) {
-      return { footprintGeom: null, center: null, result: { ...empty, warnings: [validated.error] }, subtitle: null }
+      return {
+        footprintGeom: null,
+        center: null,
+        envelope: emptyEnvelope,
+        result: { ...empty, warnings: [validated.error] },
+        subtitle: null,
+      }
     }
     if (!draftValues || draftValues.widthFt < 1 || draftValues.lengthFt < 1) {
-      return { footprintGeom: null, center: null, result: empty, subtitle: null }
+      return { footprintGeom: null, center: null, envelope: emptyEnvelope, result: empty, subtitle: null }
     }
     // Picks the largest part for centroid (display + default placement),
     // attaches a warning if the parcel was a MultiPolygon.
@@ -179,6 +200,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       return {
         footprintGeom: null,
         center: null,
+        envelope: emptyEnvelope,
         result: { ...empty, warnings: ['Parcel centroid unavailable for default placement.'] },
         subtitle: null,
       }
@@ -196,20 +218,65 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
     const closest = closestBoundaryFt(geom, norm.full)
     const warnings: string[] = []
     if (norm.warning) warnings.push(norm.warning)
+
+    // Setback envelope. Uniform mode is the only one with a runtime
+    // implementation; manual mode requires front/side/rear edge
+    // classification (Phase 6 work) so the UI accepts inputs but we don't
+    // synthesize an envelope from them.
+    let envelope: BuildableEnvelope = emptyEnvelope
+    let fitsEnvelope: boolean | null = null
+    let envSqft: number | null = null
+    if (setbackConfig.mode === 'uniform' && setbackConfig.setbackFt > 0) {
+      const envGeom = setbackEnvelope(norm.full, setbackConfig.setbackFt)
+      if (envGeom) {
+        envelope = {
+          mode: 'uniform',
+          geometry: envGeom,
+          warnings: [
+            'Uniform setback approximation. Local zoning may require different front / side / rear values; verify with code.',
+          ],
+        }
+        fitsEnvelope = fitsWithinParcel(geom, envGeom)
+        envSqft = envelopeAreaSqft(envGeom)
+      } else {
+        envelope = {
+          mode: 'uniform',
+          geometry: null,
+          warnings: [
+            `Setback of ${setbackConfig.setbackFt} ft leaves no buildable area on this parcel.`,
+          ],
+        }
+        fitsEnvelope = false
+      }
+      for (const w of envelope.warnings) warnings.push(w)
+    } else if (setbackConfig.mode === 'manual') {
+      envelope = {
+        mode: 'manual',
+        geometry: null,
+        warnings: [
+          'Manual setbacks need front / side / rear edge classification (Phase 6). Values are recorded but no envelope is drawn yet.',
+        ],
+      }
+      for (const w of envelope.warnings) warnings.push(w)
+    }
+
     return {
       footprintGeom: geom,
       center,
+      envelope,
       result: {
         fitsParcel,
+        fitsEnvelope,
         footprintSqft: fpSqft,
         parcelSqft: pSqft,
+        envelopeSqft: envSqft,
         coveragePct: cov,
         closestBoundaryFt: closest,
         warnings,
       },
       subtitle: `${draftValues.widthFt} × ${draftValues.lengthFt} ft @ ${draftValues.rotationDeg}°`,
     }
-  }, [validated, draftValues, userCenter])
+  }, [validated, draftValues, userCenter, setbackConfig])
 
   // ── Push computed footprint + center handle to the map ──────────────────
   useEffect(() => {
@@ -234,9 +301,15 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
             lengthFt: draftValues.lengthFt,
           }),
         },
+        envelope: computed.envelope.geometry,
       })
     } else {
-      updateFitLayers(asFitTarget(map), { footprint: null, handles: null, labels: null })
+      updateFitLayers(asFitTarget(map), {
+        footprint: null,
+        handles: null,
+        labels: null,
+        envelope: null,
+      })
     }
   }, [map, computed, draftValues])
 
@@ -386,11 +459,14 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       selectFootprint(footprintProjectId)
     }
 
-    // 2. Build the FitResult from the current display data.
+    // 2. Build the FitResult from the current display data. Status is a
+    // conflict when either the parcel or the envelope is crossed.
+    const inConflict =
+      computed.result.fitsParcel === false || computed.result.fitsEnvelope === false
     const result: FitResult = {
-      status: computed.result.fitsParcel === false ? 'conflict' : 'fits',
+      status: inConflict ? 'conflict' : 'fits',
       fitsParcel: computed.result.fitsParcel ?? false,
-      fitsEnvelope: null,
+      fitsEnvelope: computed.result.fitsEnvelope,
       footprintSqft: computed.result.footprintSqft ?? 0,
       parcelSqft: computed.result.parcelSqft,
       coveragePct: computed.result.coveragePct,
@@ -429,8 +505,8 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         lengthFt: draftValues.lengthFt,
         geometry: computed.footprintGeom,
       },
-      setbackConfig: { mode: 'none' },
-      envelope: { mode: 'none', geometry: null, warnings: [] },
+      setbackConfig,
+      envelope: computed.envelope,
       result,
       createdAt: now,
       updatedAt: now,
@@ -444,7 +520,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       setPlacementSavedAt(null)
       savedFlashTimeoutRef.current = null
     }, 1500)
-  }, [computed, currentProject, draftValues, parcel, validated, selectFootprint])
+  }, [computed, currentProject, draftValues, parcel, validated, selectFootprint, setbackConfig])
 
   // Make sure a pending flash-clear can't fire after unmount.
   useEffect(() => {
@@ -556,6 +632,8 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
           onResetCenter={onResetCenter}
           centerOverridden={userCenter != null}
           savedFlash={placementSavedAt != null}
+          setbackConfig={setbackConfig}
+          onSetbackConfigChange={setSetbackConfig}
         />
       </div>
     </div>

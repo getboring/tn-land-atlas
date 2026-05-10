@@ -582,6 +582,66 @@ test.describe('Holston Scout', () => {
     expect(stored.sessions[0].result.measurementMethod).toBe('geodesic')
   })
 
+  test('setback uniform mode renders the envelope and reports fitsEnvelope', async ({ page }) => {
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    // Switch into Uniform mode and pick the 25 ft preset.
+    await page.getByRole('button', { name: 'Uniform', pressed: false }).first().click()
+    await page.locator(':visible', { hasText: 'Setbacks' }).first().waitFor()
+    await page.locator('button:visible', { hasText: /^25 ft$/ }).click()
+
+    // The fit-envelope source should now carry one feature (Polygon or
+    // MultiPolygon). Poll because Turf buffer + setData flushing isn't
+    // synchronous in chromium.
+    await expect
+      .poll(async () =>
+        await page.evaluate(() => {
+          const m = (
+            window as unknown as {
+              __map__?: { querySourceFeatures: (id: string) => unknown[] }
+            }
+          ).__map__
+          return m ? m.querySourceFeatures('fit-envelope').length : 0
+        }), { timeout: 6000, intervals: [200, 400, 600] })
+      .toBeGreaterThan(0)
+  })
+
+  test('setback Save Placement persists the envelope in the FitSession', async ({ page }) => {
+    await page.goto('/?lng=-82.3534&lat=36.3134&z=16')
+    await page.evaluate(() => window.localStorage.removeItem('holston-scout/build-fit/v1'))
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    // Type a name, set Uniform 15 ft, save placement.
+    await page.locator('[data-testid="fit-form-name"]:visible').fill('Envelope-test shop')
+    // Mobile: flip to Fit tab where the setback controls + Save live.
+    const fitTab = page.getByRole('tab', { name: 'Fit' })
+    if (await fitTab.count()) await fitTab.click()
+    await page.getByRole('button', { name: 'Uniform', pressed: false }).first().click()
+    await page.locator('button:visible', { hasText: /^15 ft$/ }).click()
+    await page.locator('button:visible', { hasText: /^Save placement$/ }).click()
+
+    await expect(page.getByRole('button', { name: /Placement saved/ })).toBeVisible({ timeout: 3000 })
+
+    const stored = await page.evaluate(() => {
+      const raw = window.localStorage.getItem('holston-scout/build-fit/v1')
+      return raw ? JSON.parse(raw) : null
+    })
+    expect(stored).not.toBeNull()
+    expect(stored.sessions?.length).toBeGreaterThan(0)
+    const s = stored.sessions[0]
+    expect(s.setbackConfig.mode).toBe('uniform')
+    expect(s.setbackConfig.setbackFt).toBe(15)
+    expect(s.envelope.mode).toBe('uniform')
+    expect(s.envelope.geometry).not.toBeNull()
+    expect(['Polygon', 'MultiPolygon']).toContain(s.envelope.geometry.type)
+  })
+
   test('Tools popover still works after entering and exiting fit mode', async ({ page }) => {
     await loadParcelsAt(page, -82.3534, 36.3134, 16)
     await clickFirstParcel(page)

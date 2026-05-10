@@ -9,6 +9,8 @@ import {
   normalizeParcel,
   defaultFootprintCenter,
   footprintLabels,
+  setbackEnvelope,
+  envelopeAreaSqft,
   FEET_PER_METER,
   SQM_TO_SQFT,
 } from './geometry'
@@ -345,6 +347,53 @@ describe('footprintLabels', () => {
   it('returns an empty array on a malformed footprint', () => {
     const empty: typeof baseRect = { type: 'Polygon', coordinates: [[]] }
     expect(footprintLabels({ footprint: empty, widthFt: 40, lengthFt: 60 })).toEqual([])
+  })
+})
+
+describe('setbackEnvelope', () => {
+  it('returns null for zero or negative setback', () => {
+    const parcel = smallParcel()
+    expect(setbackEnvelope(parcel, 0)).toBeNull()
+    expect(setbackEnvelope(parcel, -5)).toBeNull()
+    expect(setbackEnvelope(parcel, Number.NaN)).toBeNull()
+  })
+
+  it('returns a smaller polygon than the parcel for positive setback', () => {
+    const parcel = smallParcel()
+    const env = setbackEnvelope(parcel, 25)
+    expect(env).not.toBeNull()
+    expect(envelopeAreaSqft(env!)).toBeLessThan(parcelAreaSqft(parcel))
+    expect(envelopeAreaSqft(env!)).toBeGreaterThan(0)
+  })
+
+  it('returns null when setback collapses the parcel', () => {
+    // smallParcel() is ~0.002 deg square at TN_CENTER. At lat 36 that's
+    // ~220m E-W and ~222m N-S. A 500ft = ~152m setback halves the parcel;
+    // a 2000ft = ~610m setback eats it entirely.
+    const env = setbackEnvelope(smallParcel(), 2000)
+    expect(env).toBeNull()
+  })
+
+  it('envelope fits within the parcel', () => {
+    const parcel = smallParcel()
+    const env = setbackEnvelope(parcel, 20)
+    expect(env).not.toBeNull()
+    // A footprint that fits in the envelope must also fit in the parcel.
+    // Build a small rectangle at the envelope's largest-part center.
+    const norm = normalizeParcel(env!)
+    const center = defaultFootprintCenter(norm.full)!
+    const inside = rectangleFromDimensions({ center, widthFt: 5, lengthFt: 5, rotationDeg: 0 })
+    expect(fitsWithinParcel(inside, env!)).toBe(true)
+    expect(fitsWithinParcel(inside, parcel)).toBe(true)
+  })
+
+  it('handles MultiPolygon parcels', () => {
+    const part1 = smallParcel().coordinates
+    const part2 = part1.map((ring) => ring.map(([lng, lat]) => [lng + 0.05, lat])) as typeof part1
+    const multi = { type: 'MultiPolygon' as const, coordinates: [part1, part2] }
+    const env = setbackEnvelope(multi, 20)
+    expect(env).not.toBeNull()
+    expect(envelopeAreaSqft(env!)).toBeGreaterThan(0)
   })
 })
 
