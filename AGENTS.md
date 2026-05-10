@@ -192,17 +192,18 @@ the FilterSheet UI.
   what makes investigations sharable.
 
 ### 19. Tests must stay green before claiming done
-- `npm test` (vitest) — 55+ unit tests for insights math
+- `npm test` (vitest) — 80 unit tests across `src/lib/{insights,permalink,lazyRetry}.ts` plus `ownerSearchTerm`
 - `npm run build` — `tsc -b` over app + node + functions project refs
 - `npx eslint .` — zero issues
-- `BASE_URL=<prod> npx playwright test` — 48+ E2E across 3 viewports
+- `BASE_URL=<prod> npx playwright test` — 63 E2E tests across 3 viewports (189 runs)
 
 ### 20. The whole app sits inside an ErrorBoundary
-`App.tsx` wraps `<Suspense>` in `<ErrorBoundary>` (`src/components/ErrorBoundary.tsx`).
-A render error in `ParcelMap` or any descendant shows a recovery UI with a
-Reload button instead of a blank page. Don't remove the wrapper. If you
-add a top-level layout component, keep ErrorBoundary as the outermost
-shell.
+`App.tsx` wraps `<Suspense>` in `<ErrorBoundary>` from the
+`react-error-boundary` package, with `FallbackComponent={MapErrorFallback}`
+(`src/components/MapErrorFallback.tsx`). A render error in `ParcelMap`
+or any descendant shows a recovery UI with a Retry button instead of a
+blank page. Don't remove the wrapper. If you add a top-level layout
+component, keep the ErrorBoundary as the outermost shell.
 
 ### 21. Security headers live in public/_headers
 Cloudflare Pages reads `public/_headers` at deploy and applies the rules
@@ -272,7 +273,7 @@ curl -s -X POST -H 'content-type: application/json' \
 | `/api/property` returns empty | `wrangler.toml` may have empty `SUPABASE_*` vars shadowing dashboard. Rule #2. |
 | Search is slow / unresponsive | Result count is > 200; refine query. Rule #15. |
 | Build green, prod broken | `tsconfig.json` lost the functions project ref. Rule #6. |
-| MapLibre 404s in console | NAIP zoom > 16 (rule #7) or a typo in the tile URL template. |
+| MapLibre 404s in console | A basemap source's listed maxzoom exceeds upstream coverage (USGS Topo caps at z16). Re-probe per AGENTS.md rule #7 covenant or a typo in the tile URL template. |
 
 ## Convex / D1 / better-auth
 

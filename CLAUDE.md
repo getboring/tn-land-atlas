@@ -15,8 +15,8 @@ the user-facing brand is **Holston Scout**.)
 - ArcGIS REST (Johnson City) for live parcel polygons
 - Supabase REST for enriched data — server-side only via Pages Functions
 - Cloudflare Pages + Pages Functions
-- Playwright (~48 tests x 3 viewports) for E2E
-- Vitest (55 cases) for `src/lib/insights.ts` math
+- Playwright (63 tests x 3 viewports = 189 runs) for E2E
+- Vitest (80 cases) across `src/lib/{insights,permalink,lazyRetry}.ts` and `ownerSearchTerm`
 
 ## Live
 - Prod: https://tn-land-atlas.pages.dev
@@ -63,7 +63,7 @@ src/
     arcgis.ts                ParcelProperties / ParcelFeature / ParcelCollection
     draw.ts                  Terra Draw lifecycle helpers, haversine ruler
     insights.ts              pure indicator functions ($/ac, holding, entity, ...)
-    insights.test.ts         55+ vitest cases
+    insights.test.ts         80 vitest cases
     lazyRetry.ts             dynamic-import wrapper with one-shot reload
     permalink.ts             URL <-> { view, parcelKey } via replaceState
     supabase-queries.ts      enriched-data types (no runtime client)
@@ -75,7 +75,7 @@ functions/api/
   parcel.ts                  GET  -> single feature by GISLINK (permalink resolver)
   search.ts                  POST -> ArcGIS LIKE on OWNER / ADDRESS / GISLINK
   property.ts                POST -> Supabase parallel reads (UUID-validated joins)
-e2e/map.spec.ts              48 tests x 3 viewports
+e2e/map.spec.ts              63 tests across 3 viewports (189 runs)
 ```
 
 ## Brand system (Holston Scout — converted to HolstonBuilder family)

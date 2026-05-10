@@ -164,12 +164,12 @@ load the latest hashed bundle.
 ## Testing
 
 ```bash
-npm test                                                  # vitest (insights math, 55 cases)
+npm test                                                  # vitest, 80 cases (insights, permalink, lazyRetry, ownerSearchTerm)
 npm run lint                                              # eslint
 npm run build                                             # tsc -b + vite build
-npm run test:e2e                                          # Playwright against dev server
+npm run test:e2e                                          # Playwright via 'wrangler pages dev' locally
 BASE_URL=https://tn-land-atlas.pages.dev npm run test:e2e # against production
-npx playwright test --repeat-each=3                       # flake check (3 runs = 144 tests)
+npx playwright test --repeat-each=3                       # flake check (3 runs = 189 tests)
 ```
 
 External security probes that should hold after any API change:
@@ -222,7 +222,7 @@ src/
     arcgis.ts           ParcelProperties / ParcelFeature / ParcelCollection types
     draw.ts             Terra Draw lifecycle helpers + haversine ruler
     insights.ts         pure indicator functions (price/ac, holding-yrs, entity, ...)
-    insights.test.ts    55+ vitest cases
+    insights.test.ts    80 vitest cases (insights + permalink + lazyRetry + ownerSearchTerm)
     lazyRetry.ts        dynamic-import wrapper with one-shot reload (stale-chunk recovery)
     permalink.ts        URL <-> { view, parcelKey } (replaceState only)
     supabase-queries.ts enriched-data type definitions (no runtime client)

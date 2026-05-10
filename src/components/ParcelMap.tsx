@@ -193,6 +193,9 @@ export default function ParcelMap() {
   const drawRef = useRef<TerraDraw | null>(null)
   const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const viewportRequestRef = useRef(0)
+  const searchAbortRef = useRef<AbortController | null>(null)
+  const searchRequestRef = useRef(0)
   const enrichRequestRef = useRef(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [searchFocused, setSearchFocused] = useState(false)
@@ -623,20 +626,28 @@ export default function ParcelMap() {
     const b = m.getBounds()
     if (abortRef.current) abortRef.current.abort()
     abortRef.current = new AbortController()
+    // Monotonic request id so a stale (aborted) request can't clear loading
+    // state while a newer request is still in flight. Mirrors the
+    // enrichRequestRef pattern used in selectParcel.
+    const requestId = ++viewportRequestRef.current
     setLoading(true)
     try {
       const data = await queryParcelsByBbox(b.getWest(), b.getSouth(), b.getEast(), b.getNorth(), COUNTY_ALL, abortRef.current.signal)
+      if (requestId !== viewportRequestRef.current) return
       rawParcelsRef.current = data as GeoJSON.FeatureCollection
       const filtered = applyClientFilters(data as GeoJSON.FeatureCollection, filtersRef.current)
       src?.setData(filtered)
       setParcelCount(filtered.features.length)
     } catch (e) {
-      if (!isAbortError(e)) {
+      if (!isAbortError(e) && requestId === viewportRequestRef.current) {
         console.error('[parcels] viewport load failed', e)
         setParcelCount(0)
       }
     } finally {
-      setLoading(false)
+      // Only clear loading if we're still the current request. An aborted
+      // older request reaching its finally during a fresh in-flight one
+      // would otherwise hide the loading pill prematurely.
+      if (requestId === viewportRequestRef.current) setLoading(false)
     }
   }, [])
 
@@ -722,26 +733,37 @@ export default function ParcelMap() {
   const doSearch = useCallback(async (queryOverride?: string) => {
     const q = (queryOverride ?? searchQuery).trim()
     if (!q || !map.current) return
+    // Abort any in-flight search and stamp this one with a monotonic id so a
+    // slower older request can't overwrite a newer query's results.
+    if (searchAbortRef.current) searchAbortRef.current.abort()
+    searchAbortRef.current = new AbortController()
+    const requestId = ++searchRequestRef.current
     setSearching(true)
     try {
-      const data = await searchParcels(q, COUNTY_ALL)
+      const data = await searchParcels(q, COUNTY_ALL, searchAbortRef.current.signal)
+      if (requestId !== searchRequestRef.current) return
       rawParcelsRef.current = data as GeoJSON.FeatureCollection
       const filtered = applyClientFilters(data as GeoJSON.FeatureCollection, filtersRef.current)
       const features = filtered.features as ParcelFeature[]
       setSearchResults(features)
+      // Always update the map source — including on a no-match search — so
+      // a previous query's parcels don't linger on the canvas behind a
+      // 'No matches' panel.
+      const src = map.current.getSource('parcels') as maplibregl.GeoJSONSource | undefined
+      src?.setData(filtered)
+      setParcelCount(features.length)
       if (features.length > 0) {
-        const src = map.current.getSource('parcels') as maplibregl.GeoJSONSource | undefined
-        src?.setData(filtered)
-        setParcelCount(features.length)
         const b = unionBounds(features)
         if (b) map.current.fitBounds(b, { padding: 80, maxZoom: 17 })
       }
     } catch (e) {
+      if (isAbortError(e)) return
+      if (requestId !== searchRequestRef.current) return
       console.error('[search] failed', e)
       setSearchResults([])
       setErrorToast("Couldn't reach the parcel service. Check your connection and try again.")
     } finally {
-      setSearching(false)
+      if (requestId === searchRequestRef.current) setSearching(false)
     }
   }, [searchQuery])
 

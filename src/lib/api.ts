@@ -1,11 +1,12 @@
 import type { PropertyData } from './supabase-queries'
 import type { ParcelCollection } from './arcgis'
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
+async function postJson<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
@@ -35,8 +36,12 @@ export async function queryParcelsByBbox(
   return res.json() as Promise<ParcelCollection>
 }
 
-export async function searchParcels(query: string, county: string): Promise<ParcelCollection> {
-  return postJson<ParcelCollection>('/api/search', { query, county })
+export async function searchParcels(
+  query: string,
+  county: string,
+  signal?: AbortSignal,
+): Promise<ParcelCollection> {
+  return postJson<ParcelCollection>('/api/search', { query, county }, signal)
 }
 
 export async function queryParcelsInPolygon(
