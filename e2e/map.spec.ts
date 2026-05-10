@@ -461,8 +461,11 @@ test.describe('Holston Scout', () => {
     await expect(footprintTab).toHaveAttribute('aria-selected', 'false')
     await expect(fitTab).toHaveAttribute('aria-selected', 'true')
     // Setbacks placeholder copy is rendered in both the desktop side panel
-    // and the mobile sheet's Fit tab; scope to the visible (mobile) one.
-    await expect(page.locator(':visible', { hasText: 'Setback envelope check arrives in the next release.' })).toBeVisible()
+    // and the mobile sheet's Fit tab; filter({ visible: true }) keeps the
+    // rendered (mobile) one without ancestor-element strict-mode collisions.
+    await expect(
+      page.getByText('Setback envelope check arrives in the next release.').filter({ visible: true }),
+    ).toBeVisible()
   })
 
   test('rotation quick-buttons update the footprint geometry', async ({ page }) => {
