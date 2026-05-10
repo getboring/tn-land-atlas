@@ -17,6 +17,7 @@ const validRectangleFootprint: FootprintProject = {
   kind: 'rectangle',
   widthFt: 40,
   lengthFt: 60,
+  rotationDeg: 0,
   stories: 1,
   footprintSqft: 2400,
   geometry: null,
@@ -148,6 +149,19 @@ describe('FootprintProjectSchema', () => {
   it('accepts null geometry (template not yet placed)', () => {
     const out = FootprintProjectSchema.parse(validRectangleFootprint)
     expect(out.geometry).toBeNull()
+  })
+
+  it('rotationDeg defaults to 0 when omitted (backward-compat read)', () => {
+    const legacy: Record<string, unknown> = { ...validRectangleFootprint }
+    delete legacy.rotationDeg
+    const result = FootprintProjectSchema.safeParse(legacy)
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.rotationDeg).toBe(0)
+  })
+
+  it('preserves rotationDeg through parse', () => {
+    const out = FootprintProjectSchema.parse({ ...validRectangleFootprint, rotationDeg: 45 })
+    expect(out.rotationDeg).toBe(45)
   })
 })
 

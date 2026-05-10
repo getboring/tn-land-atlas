@@ -1,4 +1,4 @@
-// FootprintLibrary — list of saved footprint templates with select/new.
+// FootprintLibrary, list of saved footprint templates with select/new.
 //
 // MVP behavior:
 //   - When the store is empty, the form is shown directly (no list).
@@ -25,7 +25,7 @@ export function FootprintLibrary({
   onNew,
 }: FootprintLibraryProps) {
   if (footprints.length === 0) {
-    // Empty state — caller renders the form directly. Library renders
+    // Empty state, caller renders the form directly. Library renders
     // nothing here so the workspace doesn't show an empty header.
     return null
   }

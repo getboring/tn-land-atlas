@@ -13,13 +13,15 @@
 // taking the app down.
 //
 // Forward-compatibility contract: when account-backed persistence lands,
-// this payload is the migrate input — POST the whole BuildFitStore to the
+// this payload is the migrate input, POST the whole BuildFitStore to the
 // server on first authenticated write. Don't change field shapes without
 // bumping schemaVersion and adding a migrate() branch.
 
 import { useSyncExternalStore } from 'react'
 import {
   BuildFitStoreSchema,
+  FootprintProjectSchema,
+  FitSessionSchema,
   type BuildFitStore,
   type FootprintProject,
   type FitSession,
@@ -59,11 +61,11 @@ function writeRaw(store: BuildFitStore): void {
   try {
     const next: BuildFitStore = { ...store, updatedAt: new Date().toISOString() }
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-    // Same-tab notification — the native 'storage' event only fires on
+    // Same-tab notification, the native 'storage' event only fires on
     // OTHER tabs by spec, so subscribers in the writing tab need this.
     window.dispatchEvent(new CustomEvent(EVENT_NAME))
   } catch {
-    // Not authoritative storage — D1 or equivalent will be eventually.
+    // Not authoritative storage, D1 or equivalent will be eventually.
   }
 }
 
@@ -75,16 +77,21 @@ export function getFootprints(): FootprintProject[] {
 
 /**
  * Insert or update a footprint project. Match by `id`. Returns the new
- * full store snapshot for callers that need it (most don't — subscribe
+ * full store snapshot for callers that need it (most don't, subscribe
  * via useFootprints instead).
+ *
+ * Writes go through FootprintProjectSchema first. A bad write throws here
+ * rather than corrupting localStorage and silently emptying the entire
+ * store on the next read.
  */
 export function upsertFootprint(footprint: FootprintProject): BuildFitStore {
+  const parsed = FootprintProjectSchema.parse(footprint)
   const store = readRaw()
-  const existing = store.footprints.findIndex((f) => f.id === footprint.id)
+  const existing = store.footprints.findIndex((f) => f.id === parsed.id)
   if (existing >= 0) {
-    store.footprints[existing] = footprint
+    store.footprints[existing] = parsed
   } else {
-    store.footprints.unshift(footprint)
+    store.footprints.unshift(parsed)
   }
   writeRaw(store)
   return store
@@ -93,7 +100,7 @@ export function upsertFootprint(footprint: FootprintProject): BuildFitStore {
 export function removeFootprint(id: string): void {
   const store = readRaw()
   store.footprints = store.footprints.filter((f) => f.id !== id)
-  // Cascade — sessions referencing this footprint are now orphans.
+  // Cascade, sessions referencing this footprint are now orphans.
   store.sessions = store.sessions.filter((s) => s.footprintProjectId !== id)
   writeRaw(store)
 }
@@ -105,12 +112,13 @@ export function getSessions(): FitSession[] {
 }
 
 export function upsertSession(session: FitSession): BuildFitStore {
+  const parsed = FitSessionSchema.parse(session)
   const store = readRaw()
-  const existing = store.sessions.findIndex((s) => s.id === session.id)
+  const existing = store.sessions.findIndex((s) => s.id === parsed.id)
   if (existing >= 0) {
-    store.sessions[existing] = session
+    store.sessions[existing] = parsed
   } else {
-    store.sessions.unshift(session)
+    store.sessions.unshift(parsed)
   }
   writeRaw(store)
   return store

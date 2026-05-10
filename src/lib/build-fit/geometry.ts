@@ -1,23 +1,24 @@
 // Build-fit geometry math.
 //
 // Conventions:
-// - User-facing units: feet, square feet.
-// - Internal geometry: GeoJSON [lng, lat] in EPSG:4326.
-// - Distances are geodesic via Turf's `destination` (great-circle on a
-//   spherical earth model). Good enough at parcel scale; the ~0.3% error
-//   from sphere-vs-ellipsoid is dwarfed by parcel-boundary uncertainty.
-// - Area via Turf's `area`, which uses a geodesic algorithm on m². We
-//   convert to sqft once on the boundary.
+//   User-facing units: feet, square feet.
+//   Internal geometry: GeoJSON [lng, lat] in EPSG:4326.
+//   Distances are geodesic via Turf's destination (great-circle on a
+//     spherical earth model). The ~0.3% sphere-vs-ellipsoid error at
+//     parcel scale is dwarfed by parcel-boundary survey uncertainty.
+//   Area via Turf's area, which uses a geodesic algorithm on m^2. We
+//     convert to sqft once on the boundary.
 //
-// Centroid + haversine are imported from src/lib/insights.ts rather than
-// re-implemented. Both already have unit-test coverage there; forking
+// Centroid is imported from src/lib/insights.ts rather than
+// re-implemented. It already has unit-test coverage there; forking
 // would risk drift.
 
 import area from '@turf/area'
 import destination from '@turf/destination'
-import { polygon as turfPolygon, point as turfPoint } from '@turf/helpers'
+import { polygon as turfPolygon, point as turfPoint, lineString as turfLineString } from '@turf/helpers'
 import booleanWithin from '@turf/boolean-within'
-import { centroid as parcelCentroid, haversineMeters } from '@/lib/insights'
+import pointToLineDistance from '@turf/point-to-line-distance'
+import { centroid as parcelCentroid } from '@/lib/insights'
 import type { Polygon, PolygonOrMulti } from './schemas'
 
 export const FEET_PER_METER = 3.28084
@@ -29,7 +30,7 @@ export const SQM_TO_SQFT = 10.7639104167
 // rotated `rotationDeg` clockwise from north (north = 0°, east = 90°).
 //
 // The rectangle has 5 coordinates (4 corners + first repeated to close).
-// Sides are geodesic — at TN latitudes the difference vs a flat-earth
+// Sides are geodesic, at TN latitudes the difference vs a flat-earth
 // approximation is sub-foot for buildings under ~500ft, but using the
 // sphere keeps the model honest at any parcel scale.
 
@@ -81,7 +82,7 @@ export function footprintAreaSqft(geom: Polygon): number {
   return area(turfPolygon(geom.coordinates)) * SQM_TO_SQFT
 }
 
-/** Parcel area in square feet — handles Polygon and MultiPolygon. */
+/** Parcel area in square feet, handles Polygon and MultiPolygon. */
 export function parcelAreaSqft(geom: PolygonOrMulti): number {
   if (geom.type === 'Polygon') {
     return area(turfPolygon(geom.coordinates)) * SQM_TO_SQFT
@@ -108,7 +109,7 @@ export function coveragePct(footprintSqft: number, parcelSqft: number | null): n
  * For Polygon parcels: a single Turf booleanWithin call.
  * For MultiPolygon parcels: returns true if the footprint lies within ANY
  * one part (a building can sit on one of two land parts, just not span
- * both). This matches the planning intent — a footprint that crosses
+ * both). This matches the planning intent, a footprint that crosses
  * between two disjoint parcel parts isn't actually buildable.
  */
 export function fitsWithinParcel(footprint: Polygon, parcel: PolygonOrMulti): boolean {
@@ -124,34 +125,47 @@ export function fitsWithinParcel(footprint: Polygon, parcel: PolygonOrMulti): bo
 
 // ── Convenience: pick a default footprint center ───────────────────────────
 
-/** Largest-polygon centroid — same heuristic the parcel detail panel uses. */
+/** Largest-polygon centroid, same heuristic the parcel detail panel uses. */
 export function defaultFootprintCenter(parcel: PolygonOrMulti): [number, number] | null {
   return parcelCentroid(parcel)
 }
 
-// ── Convenience: closest distance from footprint to parcel boundary ───────
-// Best-effort: walks every footprint vertex and measures geodesic distance
-// to each parcel ring vertex, returning the minimum. Not the analytic point-
-// to-edge distance — but at parcel scale with reasonably dense rings, the
-// vertex-to-vertex minimum is within an inch of the true edge distance.
-// Phase 2 can swap in @turf/point-to-line-distance if precision matters.
+// ── Closest distance from footprint to parcel boundary ───────────────────
+// Point-to-edge clearance using Turf's geodesic point-to-line distance.
+// For each footprint vertex we measure the perpendicular distance to every
+// parcel ring (treated as a closed LineString); the minimum across all
+// pairs is the true clearance to the nearest boundary, accurate even when
+// parcel rings have sparse vertices and the closest point on the boundary
+// lies between them.
+//
+// Returns null if the footprint has no exterior ring or the parcel has no
+// rings.
 
 export function closestBoundaryFt(footprint: Polygon, parcel: PolygonOrMulti): number | null {
   const fpVerts = footprint.coordinates[0]
   if (!fpVerts || fpVerts.length === 0) return null
 
-  let minMeters = Infinity
+  // Flatten parcel into a list of LineStrings (one per ring). MultiPolygon
+  // contributes every ring of every part. Skip rings that are too short
+  // for a LineString (Turf requires >= 2 positions).
   const parcelRings = parcel.type === 'Polygon' ? parcel.coordinates : parcel.coordinates.flat()
-  for (const ring of parcelRings) {
-    for (const pv of ring) {
-      for (const fv of fpVerts) {
-        const d = haversineMeters(fv as [number, number], pv as [number, number])
-        if (d < minMeters) minMeters = d
-      }
+  const lines = parcelRings
+    .filter((ring): ring is number[][] => Array.isArray(ring) && ring.length >= 2)
+    .map((ring) => turfLineString(ring))
+
+  if (lines.length === 0) return null
+
+  let minKm = Infinity
+  for (const fv of fpVerts) {
+    const pt = turfPoint(fv as [number, number])
+    for (const line of lines) {
+      const d = pointToLineDistance(pt, line, { units: 'kilometers' })
+      if (d < minKm) minKm = d
     }
   }
-  if (!Number.isFinite(minMeters)) return null
-  return minMeters * FEET_PER_METER
+  if (!Number.isFinite(minKm)) return null
+  // km -> m -> ft
+  return minKm * 1000 * FEET_PER_METER
 }
 
 // ── Geometry normalization ─────────────────────────────────────────────────
@@ -162,7 +176,7 @@ export function closestBoundaryFt(footprint: Polygon, parcel: PolygonOrMulti): n
 export interface NormalizedParcel {
   /** Largest-polygon view, suitable for display and centroid math. */
   largest: Polygon
-  /** Original geometry — used for fit checks against the whole parcel. */
+  /** Original geometry, used for fit checks against the whole parcel. */
   full: PolygonOrMulti
   /** Set when the original was a MultiPolygon and we picked the largest part. */
   warning: string | null

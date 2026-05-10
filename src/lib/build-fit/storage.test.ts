@@ -21,6 +21,7 @@ const fp = (overrides: Partial<FootprintProject> = {}): FootprintProject => ({
   kind: 'rectangle',
   widthFt: 40,
   lengthFt: 60,
+  rotationDeg: 0,
   stories: 1,
   footprintSqft: 2400,
   geometry: null,
@@ -233,6 +234,56 @@ describe('storage: events', () => {
     removeFootprint('fp-2')
     window.removeEventListener(BUILD_FIT_EVENT_NAME, handler)
     expect(count).toBe(3)
+  })
+})
+
+describe('storage: write validation', () => {
+  it('rejects an upsertFootprint payload that fails the schema', () => {
+    // Empty name violates FootprintProjectSchema's z.string().min(1).
+    expect(() => upsertFootprint(fp({ name: '' }))).toThrow()
+    expect(getFootprints()).toEqual([])
+  })
+
+  it('rejects an upsertSession payload missing required fields', () => {
+    const bad = minimalSession({ parcelKey: '' })
+    expect(() => upsertSession(bad)).toThrow()
+    expect(getSessions()).toEqual([])
+  })
+
+  it('persists and round-trips rotationDeg', () => {
+    upsertFootprint(fp({ id: 'rot-1', rotationDeg: 37 }))
+    const round = getFootprints()[0]
+    expect(round?.rotationDeg).toBe(37)
+  })
+
+  it('defaults rotationDeg to 0 for v1 payloads written before rotationDeg existed', () => {
+    // Simulate an older payload that pre-dates the rotationDeg field.
+    const legacy = {
+      schemaVersion: 1,
+      footprints: [
+        {
+          id: 'legacy-1',
+          name: 'pre-rotation footprint',
+          kind: 'rectangle',
+          widthFt: 40,
+          lengthFt: 60,
+          stories: 1,
+          footprintSqft: 2400,
+          geometry: null,
+          createdFrom: 'typed-dimensions',
+          notes: null,
+          createdAt: ISO,
+          updatedAt: ISO,
+          // rotationDeg deliberately absent
+        },
+      ],
+      sessions: [],
+      updatedAt: ISO,
+    }
+    window.localStorage.setItem(BUILD_FIT_STORAGE_KEY, JSON.stringify(legacy))
+    __testing.resetCache()
+    const round = getFootprints()[0]
+    expect(round?.rotationDeg).toBe(0)
   })
 })
 

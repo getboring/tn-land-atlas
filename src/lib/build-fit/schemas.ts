@@ -1,4 +1,4 @@
-// Build-fit schemas. Zod is the source of truth — TS types are inferred.
+// Build-fit schemas. Zod is the source of truth, TS types are inferred.
 //
 // Why Zod here: project-import (Phase 4) will accept user-supplied JSON
 // files, which means we need real runtime validation, not just TS types.
@@ -54,6 +54,9 @@ export const FootprintProjectSchema = z.object({
   kind: z.enum(['rectangle', 'polygon']),
   widthFt: z.number().nullable(),
   lengthFt: z.number().nullable(),
+  /** Clockwise from north. Default 0 keeps v1 payloads written before
+   *  this field existed parseable without bumping schemaVersion. */
+  rotationDeg: z.number().default(0),
   stories: z.number().nullable(),
   /** Computed footprint area in square feet, capped to 7 decimals on write. */
   footprintSqft: z.number(),
@@ -173,7 +176,7 @@ export const BuildFitStoreSchema = z.object({
   updatedAt: z.string(),
 })
 
-// ── Inferred TS types — single source of truth, no hand-written copies ────
+// ── Inferred TS types, single source of truth, no hand-written copies ────
 
 export type Polygon = z.infer<typeof PolygonSchema>
 export type MultiPolygon = z.infer<typeof MultiPolygonSchema>

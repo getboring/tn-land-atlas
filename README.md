@@ -164,7 +164,7 @@ load the latest hashed bundle.
 ## Testing
 
 ```bash
-npm test                                                  # vitest, 80 cases (insights, permalink, lazyRetry, ownerSearchTerm)
+npm test                                                  # vitest, 170+ cases (insights, permalink, lazyRetry, ownerSearchTerm, build-fit)
 npm run lint                                              # eslint
 npm run build                                             # tsc -b + vite build
 npm run test:e2e                                          # Playwright via 'wrangler pages dev' locally
@@ -222,7 +222,7 @@ src/
     arcgis.ts           ParcelProperties / ParcelFeature / ParcelCollection types
     draw.ts             Terra Draw lifecycle helpers + haversine ruler
     insights.ts         pure indicator functions (price/ac, holding-yrs, entity, ...)
-    insights.test.ts    80 vitest cases (insights + permalink + lazyRetry + ownerSearchTerm)
+    insights.test.ts    vitest cases for the parcel-side helpers (170+ total across all suites)
     lazyRetry.ts        dynamic-import wrapper with one-shot reload (stale-chunk recovery)
     permalink.ts        URL <-> { view, parcelKey } (replaceState only)
     supabase-queries.ts enriched-data type definitions (no runtime client)

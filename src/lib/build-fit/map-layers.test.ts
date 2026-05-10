@@ -24,7 +24,7 @@ class MockMap implements FitMapTarget {
   sources = new Map<string, { type: 'geojson'; data: GeoJSON.FeatureCollection }>()
   layers = new Map<string, FitLayerSpec>()
   layerOrder: string[] = []
-  /** Layers from the "host" style — pretend the parcel layers are already there. */
+  /** Layers from the "host" style, pretend the parcel layers are already there. */
   preexistingLayers: string[] = []
   calls: RecordedCall[] = []
   sourceData = new Map<string, GeoJSON.FeatureCollection>()
@@ -57,7 +57,7 @@ class MockMap implements FitMapTarget {
       const idx = this.layerOrder.indexOf(beforeId)
       this.layerOrder.splice(idx, 0, spec.id)
     } else if (beforeId && this.preexistingLayers.includes(beforeId)) {
-      // Preexisting host layer is the anchor — fit layers stack just below it.
+      // Preexisting host layer is the anchor, fit layers stack just below it.
       this.layerOrder.push(spec.id)
     } else {
       this.layerOrder.push(spec.id)
@@ -141,7 +141,7 @@ describe('installFitLayers', () => {
     expect(fitOrder).toEqual([...FIT_LAYER_IDS_BOTTOM_TO_TOP])
   })
 
-  it('is idempotent — calling twice does not throw or duplicate', () => {
+  it('is idempotent, calling twice does not throw or duplicate', () => {
     installFitLayers(map)
     const firstCallCount = map.calls.length
     expect(() => installFitLayers(map)).not.toThrow()
@@ -254,7 +254,7 @@ describe('updateFitLayers', () => {
     expect(map.sourceData.get(FIT_SOURCE_IDS.labels)?.features).toHaveLength(1)
   })
 
-  it('only emits setData calls — never addLayer or removeLayer', () => {
+  it('only emits setData calls, never addLayer or removeLayer', () => {
     updateFitLayers(map, {
       footprint: { geometry: samplePolygon, valid: true },
       envelope: samplePolygon,

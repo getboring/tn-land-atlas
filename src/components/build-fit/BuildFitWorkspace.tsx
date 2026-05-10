@@ -1,22 +1,23 @@
-// BuildFitWorkspace — fit mode shell. Lazy-loaded from ParcelMap.tsx via
+// BuildFitWorkspace, fit mode shell. Lazy-loaded from ParcelMap.tsx via
 // React.lazy so the Turf + Zod + workspace bundle only ships when the user
 // clicks "Test Building Fit." This is a default export to play nicely with
 // React.lazy.
 //
 // Lifecycle:
-//   - Mount: install fit-* layers + sources via map-layers helpers.
-//   - On footprint change: rectangle + fit math + setData updates.
-//   - Unmount: clear fit sources (layers stay installed; cheap to re-enter).
-//   - On parcel-clear in the host: ParcelMap closes us via onClose.
+//   Mount         install fit-* layers + sources via map-layers helpers
+//   Form change   rectangle + fit math + setData updates
+//   Unmount       clear fit sources (layers stay installed for re-entry)
+//   Parcel clear  ParcelMap closes us via onClose
 //
 // What this file does NOT do (per Day 3 scope):
-//   - No setbacks (Phase 3).
-//   - No drag/rotate handles (Phase 2; numeric rotation is supported).
-//   - No "Save placement" — saving the FitSession is Phase 4.
-//   - No Send-to-Builder.
+//   No setbacks (Phase 3).
+//   No drag/rotate handles (Phase 2; numeric rotation is supported).
+//   No "Save placement", saving the FitSession is Phase 4.
+//   No Send-to-Builder.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { X } from 'lucide-react'
+import { ulid } from 'ulidx'
 import { cn } from '@/lib/utils'
 import type { ParcelFeature } from '@/lib/arcgis'
 import {
@@ -78,8 +79,8 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
   const footprints = useFootprints()
   // explicitId tracks the user's last interaction:
   //   - string  : they picked an existing footprint by id
-  //   - 'NEW'   : they clicked "New" — show a blank form
-  //   - null    : initial state — auto-fall to the first footprint if any
+  //   - 'NEW'   : they clicked "New", show a blank form
+  //   - null    : initial state, auto-fall to the first footprint if any
   // Deriving selectedId via useMemo (vs storing + syncing in an effect)
   // avoids cascading renders the lint rule warns about.
   const [explicitId, setExplicitId] = useState<string | 'NEW' | null>(null)
@@ -171,14 +172,21 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
 
   const onSave = useCallback(
     (values: FootprintFormValues) => {
+      // Defense in depth: refuse to persist a typed-dimension rectangle
+      // without geometry. After the FootprintForm mount-time onChange fix,
+      // computed.footprintGeom is non-null whenever name+width+length are
+      // valid; this guard catches edge cases where the parcel geometry
+      // failed to validate (no centroid available).
+      if (!computed.footprintGeom) return
       const now = new Date().toISOString()
-      const id = currentProject?.id ?? cryptoRandomId()
+      const id = currentProject?.id ?? ulid()
       const project: FootprintProject = {
         id,
         name: values.name.trim(),
         kind: 'rectangle',
         widthFt: values.widthFt,
         lengthFt: values.lengthFt,
+        rotationDeg: values.rotationDeg,
         stories: values.stories,
         footprintSqft: computed.result.footprintSqft ?? values.widthFt * values.lengthFt,
         geometry: computed.footprintGeom,
@@ -238,7 +246,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         </button>
       </div>
 
-      {/* Desktop (sm+): side panels — form on the left, result on the right,
+      {/* Desktop (sm+): side panels, form on the left, result on the right,
           map fills the gap. */}
       <div className="hidden sm:flex pointer-events-auto absolute top-16 left-3 right-3 bottom-3 flex-row gap-3">
         <div className="w-[300px] flex-none rounded-xl bg-surface/95 backdrop-blur border border-border-default p-3 space-y-3 overflow-y-auto brand-scroll">
@@ -250,7 +258,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
           />
           <FootprintForm
             // key remounts the form with fresh state when the user picks a
-            // different footprint — avoids a prop-sync effect.
+            // different footprint, avoids a prop-sync effect.
             key={currentProject?.id ?? 'new'}
             initial={currentProject}
             onChange={onChange}
@@ -333,12 +341,3 @@ function MobileTab({
   )
 }
 
-function cryptoRandomId(): string {
-  // Phase 1 uses crypto.randomUUID for non-migrated local IDs. ULIDs come
-  // when the payload migrates to D1 (see projects/buildplan2.md §IDs).
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  // SSR fallback — never hit in the browser path.
-  return `fp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-}

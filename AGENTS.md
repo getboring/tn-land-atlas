@@ -192,7 +192,7 @@ the FilterSheet UI.
   what makes investigations sharable.
 
 ### 19. Tests must stay green before claiming done
-- `npm test` (vitest) — 80 unit tests across `src/lib/{insights,permalink,lazyRetry}.ts` plus `ownerSearchTerm`
+- `npm test` (vitest), 170+ unit tests across `src/lib/{insights,permalink,lazyRetry,build-fit}.ts` plus `ownerSearchTerm`
 - `npm run build` — `tsc -b` over app + node + functions project refs
 - `npx eslint .` — zero issues
 - `BASE_URL=<prod> npx playwright test` — 63 E2E tests across 3 viewports (189 runs)

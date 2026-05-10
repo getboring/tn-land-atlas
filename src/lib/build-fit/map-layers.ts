@@ -1,4 +1,4 @@
-// Build-fit map layers — install / update / clear contract.
+// Build-fit map layers, install / update / clear contract.
 //
 // The contract a consumer (eventually BuildFitWorkspace) gets:
 //
@@ -17,7 +17,7 @@
 //     does NOT touch any non-fit-* source/layer.
 //
 //   uninstallFitLayers(map)
-//     Full removal — drops layers then sources. Useful for tests; not
+//     Full removal, drops layers then sources. Useful for tests; not
 //     required during normal mode toggling because clearFitLayers is
 //     cheaper.
 //
@@ -51,7 +51,7 @@ export interface FitMapTarget {
   getStyle?: () => { layers?: Array<{ id: string }> } | undefined
 }
 
-// MapLibre layer-spec union — paint shapes vary by layer type. We use
+// MapLibre layer-spec union, paint shapes vary by layer type. We use
 // `unknown`-typed paint to avoid pinning to a specific MapLibre version's
 // types; the mock+test verify shape, the real Map enforces validity at runtime.
 export interface FitLayerSpec {
@@ -78,9 +78,9 @@ export const FIT_SOURCE_IDS = {
 // §Map Layers (lines 305-330). When inserted with the same beforeId, the
 // LAST installed sits on top, which is why we install in this exact order.
 export const FIT_LAYER_IDS_BOTTOM_TO_TOP = [
-  'fit-envelope',          // 5: buildable envelope fill — blueish wash
+  'fit-envelope',          // 5: buildable envelope fill, blueish wash
   'fit-setback-lines',     // 6: dashed setback offsets
-  'fit-footprint-fill',    // 7: proposed structure — amber valid / red conflict
+  'fit-footprint-fill',    // 7: proposed structure, amber valid / red conflict
   'fit-footprint-outline', // 8: exact building edge
   'fit-footprint-handles', // 9: center / rotate / resize handles
   'fit-conflicts',         // 10: red line segments at boundary violations
@@ -93,12 +93,12 @@ const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', feature
 
 // ── Layer specs ────────────────────────────────────────────────────────────
 // Brand palette (mirrors HolstonBuilder family in src/index.css):
-//   brand        #F59E0B  — valid footprint
-//   brand-strong #FCD34D  — footprint outline (valid)
-//   danger       #F87171  — conflict / invalid footprint
-//   info         #60A5FA  — buildable envelope wash
-//   text-primary #F8FAFC  — handles / label fill
-//   bg           #02040A  — handles / label stroke
+//   brand        #F59E0B , valid footprint
+//   brand-strong #FCD34D , footprint outline (valid)
+//   danger       #F87171 , conflict / invalid footprint
+//   info         #60A5FA , buildable envelope wash
+//   text-primary #F8FAFC , handles / label fill
+//   bg           #02040A , handles / label stroke
 //
 // We don't import these from CSS because MapLibre paint expressions evaluate
 // at GL-shader time and can't read CSS variables. They're literals here.
@@ -220,14 +220,14 @@ export interface InstallOptions {
   /**
    * Insert each fit layer immediately before this layer id. If the id is
    * missing from the current style (e.g. consumer renamed it), all fit
-   * layers are appended to the top. Either path produces a sane result —
+   * layers are appended to the top. Either path produces a sane result;
    * the fallback isn't an error.
    */
   beforeId?: string
 }
 
 export function installFitLayers(map: FitMapTarget, options: InstallOptions = {}): void {
-  // Sources first — order doesn't matter for sources.
+  // Sources first, order doesn't matter for sources.
   for (const sourceId of ALL_FIT_SOURCE_IDS) {
     if (!map.getSource(sourceId)) {
       map.addSource(sourceId, { type: 'geojson', data: EMPTY_FC })

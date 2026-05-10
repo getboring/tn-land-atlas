@@ -230,6 +230,43 @@ describe('closestBoundaryFt', () => {
     )
     expect(nearEdge!).toBeLessThan(centered!)
   })
+
+  it('measures point-to-edge, not vertex-to-vertex', () => {
+    // Parcel with very sparse vertices: a long thin rectangle stretching
+    // east-west. A footprint placed at the geometric center has its
+    // closest vertex very far from any parcel vertex (corners are ~440 ft
+    // away each), but the closest EDGE is much nearer. A vertex-to-vertex
+    // implementation would overstate the clearance; point-to-line gives
+    // the true perpendicular distance.
+    const lng = TN_CENTER[0]
+    const lat = TN_CENTER[1]
+    const longParcel: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [lng - 0.01, lat - 0.0002],
+          [lng + 0.01, lat - 0.0002],
+          [lng + 0.01, lat + 0.0002],
+          [lng - 0.01, lat + 0.0002],
+          [lng - 0.01, lat - 0.0002],
+        ],
+      ],
+    }
+    const r = rectangleFromDimensions({
+      center: TN_CENTER,
+      widthFt: 20,
+      lengthFt: 20,
+      rotationDeg: 0,
+    })
+    const d = closestBoundaryFt(r, longParcel)
+    expect(d).not.toBeNull()
+    // Parcel half-width N-S is ~0.0002 deg lat = ~22 m = ~73 ft.
+    // Footprint half-length is 10 ft. True clearance is ~63 ft. A
+    // vertex-to-vertex implementation would return >440 ft (corner-to-corner
+    // distance). Assert we're well under that bound.
+    expect(d!).toBeLessThan(150)
+    expect(d!).toBeGreaterThan(40)
+  })
 })
 
 describe('normalizeParcel', () => {

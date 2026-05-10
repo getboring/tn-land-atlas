@@ -1,11 +1,11 @@
-// FitResultPanel — the decision-summary card for the proposed footprint.
+// FitResultPanel, the decision-summary card for the proposed footprint.
 //
 // Displays priority order per projects/buildplan2.md §Fit Panel Priority:
 //   1. Fit status
 //   2. Primary warning (if any)
 //   3. Footprint dimensions / area
 //   4. Parcel coverage
-//   5. Setback / envelope status (Phase 3 — placeholder for now)
+//   5. Setback / envelope status (Phase 3, placeholder for now)
 //   6. Actions (Phase 1: Exit only)
 //   7. Disclaimer
 //
@@ -68,16 +68,17 @@ export function FitResultPanel({ result, subtitle }: FitResultPanelProps) {
         </div>
       )}
 
-      {/* 4b. Closest boundary */}
+      {/* 4b. Closest boundary, perpendicular geodesic distance from each
+          footprint vertex to the nearest parcel ring edge. Real clearance,
+          not a vertex-pair approximation. */}
       {closestBoundaryFt != null && (
         <Metric
           label="Closest boundary"
           value={`${Math.round(closestBoundaryFt).toLocaleString()} ft`}
-          sub="vertex-pair estimate; refines to point-to-edge in Phase 2"
         />
       )}
 
-      {/* 5. Setback/envelope — Phase 3 placeholder. Keeps the panel layout
+      {/* 5. Setback/envelope, Phase 3 placeholder. Keeps the panel layout
           stable so the future block lands without re-flow. */}
       <div className="px-3 py-2 rounded-lg bg-white/5 border border-border-default">
         <div className="data-label flex items-center gap-1">

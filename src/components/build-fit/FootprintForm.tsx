@@ -1,11 +1,11 @@
-// FootprintForm — typed-dimension rectangle creator + editor.
+// FootprintForm, typed-dimension rectangle creator + editor.
 //
-// Phase 1 only supports rectangles from typed dimensions (width × length).
+// Phase 1 only supports rectangles from typed dimensions (width x length).
 // Drawn polygons + drag/rotate handles come in Phase 2. Numeric rotation
-// is trivial — an input field that re-runs rectangleFromDimensions —
-// so it ships now.
+// is trivial (an input field that re-runs rectangleFromDimensions) so it
+// ships now.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Save, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { FootprintProject } from '@/lib/build-fit/schemas'
@@ -22,9 +22,9 @@ export interface FootprintFormValues {
 interface FootprintFormProps {
   /** Existing project being edited, or null when creating fresh. */
   initial: FootprintProject | null
-  /** Live preview — fires on every valid input change so the map can re-render. */
+  /** Live preview, fires on every valid input change so the map can re-render. */
   onChange: (next: FootprintFormValues) => void
-  /** Persist — fires on Save click. Workspace upserts to localStorage. */
+  /** Persist, fires on Save click. Workspace upserts to localStorage. */
   onSave: (next: FootprintFormValues) => void
   /** Phase-1 simple-delete. Workspace removes from store + clears the map. */
   onDelete?: () => void
@@ -44,7 +44,7 @@ function projectToForm(p: FootprintProject): FootprintFormValues {
     name: p.name,
     widthFt: p.widthFt ?? 40,
     lengthFt: p.lengthFt ?? 60,
-    rotationDeg: 0,
+    rotationDeg: p.rotationDeg,
     stories: p.stories,
     notes: p.notes,
   }
@@ -58,13 +58,25 @@ export function FootprintForm({ initial, onChange, onSave, onDelete }: Footprint
     initial ? projectToForm(initial) : DEFAULT_VALUES,
   )
 
+  // Emit the initial values to the parent ONCE on mount so the workspace
+  // can render the default-rectangle preview without requiring the user to
+  // edit a field first. Empty deps array makes this strictly mount-time;
+  // the eslint-disable below is intentional, the function identity changing
+  // shouldn't re-fire this effect.
+  useEffect(() => {
+    if (values.widthFt >= 1 && values.lengthFt >= 1) {
+      onChange(values)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const isValid =
     values.name.trim().length > 0 && values.widthFt >= 1 && values.lengthFt >= 1
 
   const setField = <K extends keyof FootprintFormValues>(key: K, value: FootprintFormValues[K]) => {
     setValues((v) => {
       const next = { ...v, [key]: value }
-      // Live preview — emit every valid change directly from the event
+      // Live preview, emit every valid change directly from the event
       // handler instead of via a watcher effect. Numbers below 1 ft are
       // treated as in-progress.
       if (next.widthFt >= 1 && next.lengthFt >= 1) onChange(next)
