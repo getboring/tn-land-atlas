@@ -488,10 +488,10 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         </button>
       </div>
 
-      {/* Mobile-only tab bar. Hidden at sm+; shown at <sm.
-          Tab state toggles VISIBILITY on the single-mounted panels below
-          via Tailwind classes, never unmounts them. So a switch from
-          Footprint to Fit doesn't reset transient form state. */}
+      {/* Mobile-only tab bar. Sits just above the bottom-sheet panels at
+          the 60vh mark. Tab state toggles display on the single-mounted
+          panels below, never unmounts them, so transient form state
+          survives tab flips. */}
       <div
         role="tablist"
         aria-label="Building Fit panels"
@@ -507,17 +507,16 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
 
       {/* Footprint panel — single mount.
           Desktop (sm+): fixed-width column on the left.
-          Mobile (<sm): bottom sheet, visible only when 'footprint' tab active. */}
+          Mobile (<sm): bottom sheet, gated by tab state. */}
       <div
         className={cn(
-          'pointer-events-auto absolute rounded-xl bg-surface/95 backdrop-blur border border-border-default p-3 space-y-3 overflow-y-auto brand-scroll',
-          // Desktop layout — wins on sm+ via the !sm:* utility chain.
-          'sm:w-[300px] sm:left-3 sm:top-16 sm:bottom-3',
-          // Mobile layout — bottom sheet under the tab bar.
-          'left-0 right-0 bottom-0 max-h-[60vh] rounded-b-none rounded-t-none border-x-0 border-b-0 sm:rounded-xl sm:border-x sm:border-b safe-bottom sm:safe-top-0',
-          // Mobile tab gating: hide via display:none when Fit tab is active.
-          // sm:!block forces visibility back on at desktop regardless of tab.
-          mobileTab === 'footprint' ? 'block' : 'hidden',
+          'pointer-events-auto absolute bg-surface/95 backdrop-blur p-3 space-y-3 overflow-y-auto brand-scroll',
+          // Mobile layout (max-sm scope so it never bleeds into desktop).
+          'max-sm:left-0 max-sm:right-0 max-sm:bottom-0 max-sm:max-h-[60vh] max-sm:border-t max-sm:border-border-default safe-bottom',
+          // Desktop layout: side panel on the left.
+          'sm:w-[300px] sm:left-3 sm:top-16 sm:bottom-3 sm:rounded-xl sm:border sm:border-border-default',
+          // Tab visibility (mobile only). sm:!block always wins on desktop.
+          mobileTab === 'footprint' ? 'max-sm:block' : 'max-sm:hidden',
           'sm:!block',
         )}
       >
@@ -540,13 +539,13 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
 
       {/* Fit result panel — single mount.
           Desktop (sm+): fixed-width column on the right.
-          Mobile (<sm): bottom sheet, visible only when 'fit' tab active. */}
+          Mobile (<sm): bottom sheet, gated by tab state. */}
       <div
         className={cn(
-          'pointer-events-auto absolute rounded-xl bg-surface/95 backdrop-blur border border-border-default p-3 overflow-y-auto brand-scroll',
-          'sm:w-[320px] sm:right-3 sm:top-16 sm:bottom-3',
-          'left-0 right-0 bottom-0 max-h-[60vh] rounded-b-none rounded-t-none border-x-0 border-b-0 sm:rounded-xl sm:border-x sm:border-b safe-bottom',
-          mobileTab === 'fit' ? 'block' : 'hidden',
+          'pointer-events-auto absolute bg-surface/95 backdrop-blur p-3 overflow-y-auto brand-scroll',
+          'max-sm:left-0 max-sm:right-0 max-sm:bottom-0 max-sm:max-h-[60vh] max-sm:border-t max-sm:border-border-default safe-bottom',
+          'sm:w-[320px] sm:right-3 sm:top-16 sm:bottom-3 sm:rounded-xl sm:border sm:border-border-default',
+          mobileTab === 'fit' ? 'max-sm:block' : 'max-sm:hidden',
           'sm:!block',
         )}
       >
