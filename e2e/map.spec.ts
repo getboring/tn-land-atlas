@@ -411,7 +411,11 @@ test.describe('Holston Scout', () => {
     await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
     await page.getByRole('button', { name: /Exit Building Fit/i }).click()
     await expect(page.locator('[data-fit-workspace]')).toHaveCount(0)
-    // Now Tools should still expose Lasso and Ruler.
+    // On mobile the detail panel is full-width and overlaps the bottom
+    // action bar; close it before testing the Tools popover. Desktop has
+    // a 80-wide side panel and would not intercept, but the close path
+    // works there too.
+    await page.getByRole('button', { name: /Close property details/i }).click()
     await page.getByRole('button', { name: /Drawing tools/i }).click()
     await expect(page.getByRole('button', { name: /Lasso parcels/i })).toBeVisible()
     await expect(page.getByRole('button', { name: /Measure distance/i })).toBeVisible()
