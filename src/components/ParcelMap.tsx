@@ -365,7 +365,8 @@ export default function ParcelMap() {
       })
 
       // Major contours (level=1) thicker, minor (level=0) thinner.
-      // Visibility starts off — toggled by the Topo button.
+      // Visibility starts off — toggled by the Contour lines switch
+      // inside the Layers popover (bottom action bar).
       m.addLayer({
         id: 'contour-lines',
         type: 'line',
