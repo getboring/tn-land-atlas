@@ -1,15 +1,19 @@
 # Holston Scout
 
-**Pre-construction parcel intelligence for East Tennessee builders.**
+**Pre-construction parcel intelligence for builders.**
 *Scout the ground. Know the build.*
 
-A parcel-first map product for **Sullivan, Washington, and Carter** counties.
-Live aerial imagery, slate-on-imagery parcel boundaries, copper hover and
-selection states with corner-node markers (the Survey Corner brand mark in
-miniature), owner / address / parcel-ID search, elevation contours, lasso
-+ ruler tools, computed insight badges, server-side enriched property data
-(buildings, valuations, sales history, linked entities), URL permalinks,
-and PDF/PNG export.
+A parcel-first map product. Currently wired to **Sullivan, Washington,
+and Carter** counties via Johnson City ArcGIS; the product itself is
+not state-locked. Switchable basemaps (Satellite / Streets /
+Topographic / Hybrid), slate parcel boundaries, amber hover and
+selection states with corner-node markers (the Survey Corner brand
+mark in miniature), owner / address / parcel-ID search with type-ahead
+from recent visits, elevation contour overlay, lasso + ruler tools,
+computed insight badges, save / recent parcels (localStorage),
+server-side enriched property data (buildings, valuations, sales
+history, linked entities), URL permalinks, PDF/PNG export, and an
+`@media print` parcel-handout layout.
 
 Repo and Cloudflare Pages project keep the legacy `tn-land-atlas` name.
 The user-facing brand is **Holston Scout**, a vertical of the Holston Intel
@@ -22,7 +26,7 @@ Live: <https://tn-land-atlas.pages.dev>
 - Vite 8 + React 19 + TypeScript strict (project refs for app / node / functions)
 - MapLibre GL JS 5
 - maplibre-contour, terra-draw, @watergis/maplibre-gl-export
-- Tailwind CSS v4 with `@theme` tokens (Holston palette + Playfair Display / Source Sans 3 / IBM Plex Mono)
+- Tailwind CSS v4 with `@theme` tokens (HolstonBuilder family — Inter throughout, system monospace stack for data; palette: `bg #02040A`, `surface #0F1729`, `brand #F59E0B`, `text-primary #F8FAFC`)
 - ArcGIS REST (Johnson City) for live parcel polygons
 - Supabase REST for enriched data — server-side only via Pages Functions
 - Cloudflare Pages + Pages Functions
@@ -57,14 +61,21 @@ caps at 200 rows out of up to 2000 — refine the query to narrow.
 Universal across desktop / tablet / mobile. Five buttons, all >= 56px tall
 (WCAG 2.5.5 AAA, iOS HIG, Material 3):
 
-- **Topo** — toggle elevation contours (every 50 ft minor / 200 ft major
-  at z13, scales finer at z14+; from the public Mapzen Terrarium DEM)
-- **Tools** — opens a popover with **Lasso** (draw a polygon, find every
-  parcel inside) and **Ruler** (haversine distance in feet/miles)
-- **Filter** — opens a native `<dialog>` with the computed-insight filters
+- **Layers** — opens a popover with the basemap chooser (Satellite /
+  Streets / Topographic / Hybrid) and the **Contour lines** overlay
+  toggle (50 ft minor / 200 ft major at z13, finer at z14+; public
+  Mapzen Terrarium DEM). Adding a new source must clear AGENTS.md
+  rule #7 (bounds, CSP, attribution, zoom probe).
+- **Tools** — opens a popover with **Lasso** (draw a polygon, find
+  every parcel inside) and **Ruler** (haversine distance in feet/miles).
+  While a draw mode is active, the parent button echoes the active
+  mode in its icon and label.
+- **Filter** — opens a native `<dialog>` with the computed-insight
+  filters. Active count appears in the button label.
 - **Locate** — triggers the GeolocateControl (caps zoom at 17 so users
-  land with a few blocks of context, not eyeballs-on-asphalt)
-- **Reset** — fly back to overview at z11
+  land with a few blocks of context, not eyeballs-on-asphalt). Pulses
+  in amber while acquiring; clears on either resolve or error.
+- **Home** — fly back to overview at z11.
 
 ### Computed insights (Property detail panel)
 Every indicator is a pure function over data we have. No hardcoded
@@ -192,10 +203,11 @@ public/
 src/
   App.tsx               <HolstonChrome><ErrorBoundary><Suspense><ParcelMap />
   main.tsx              React root, imports index.css
-  index.css             @theme tokens (Holston palette + Playfair / Source Sans 3 /
-                        IBM Plex Mono), MapLibre overrides, instrument-grade controls,
-                        backdrop-filter @supports fallback, prefers-reduced-motion,
-                        data-value / data-label utilities
+  index.css             @theme tokens (HolstonBuilder family — Inter throughout,
+                        system monospace stack), MapLibre overrides, instrument-grade
+                        controls, backdrop-filter @supports fallback, @media print
+                        parcel-handout layout, prefers-reduced-motion, data-value /
+                        data-label utilities
   components/
     HolstonChrome.tsx   top chrome bar (48-52px) — wordmark + Survey Corner mark
     SurveyCornerMark.tsx geometric brand mark; three lockups

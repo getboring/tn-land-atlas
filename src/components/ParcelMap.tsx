@@ -245,6 +245,10 @@ export default function ParcelMap() {
             tileSize: 256,
             minzoom: 0,
             maxzoom: 19,
+            // Match the satellite source's TN-area bounds so MapLibre never
+            // requests tiles outside the data area (AGENTS.md rule #7 covenant
+            // for additional basemap sources).
+            bounds: TN_BOUNDS,
             attribution:
               '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
           },
@@ -256,6 +260,7 @@ export default function ParcelMap() {
             tileSize: 256,
             minzoom: 0,
             maxzoom: 16,
+            bounds: TN_BOUNDS,
             attribution: 'Map data © <a href="https://www.usgs.gov/" target="_blank" rel="noopener">USGS</a>',
           },
           // Hybrid labels — Esri reference overlay for the satellite basemap.
@@ -267,6 +272,7 @@ export default function ParcelMap() {
             tileSize: 256,
             minzoom: 0,
             maxzoom: 19,
+            bounds: TN_BOUNDS,
             attribution:
               'Labels © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a>, HERE, Garmin',
           },

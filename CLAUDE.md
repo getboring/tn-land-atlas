@@ -117,14 +117,26 @@ Caps labels use `data-label`.
 ## Architecture notes
 
 ### Bottom action bar (the menu system)
-Universal across desktop / tablet / mobile. Five buttons (Topo / Tools /
-Filter / Locate / Reset), each 64x56 (exceeds iOS HIG 44pt and Material 3
-48dp). Backdrop-blur frosted look. `safe-area-inset-bottom` clears the
+Universal across desktop / tablet / mobile. Five buttons (Layers / Tools
+/ Filter / Locate / Home), each 64x56 (exceeds iOS HIG 44pt and Material
+3 48dp). Backdrop-blur frosted look. `safe-area-inset-bottom` clears the
 iOS home indicator.
+
+### Layers popover
+Tapping Layers opens a popover above the bar. Top half is the basemap
+chooser (4 radio-style pills: Satellite / Streets / Topographic /
+Hybrid). Bottom half is overlays — currently Contour lines as a switch
+(role=switch, aria-checked). Mutually exclusive with the Tools popover
+so they don't fight over the same vertical slot. Visibility is toggled
+via `setLayoutProperty('id', 'visibility', …)`, never `setStyle()` —
+see AGENTS.md rule #7 for the four-check covenant for adding a new
+basemap or overlay source.
 
 ### Tools popover
 Tapping Tools opens an inline popover above the bar with Lasso (polygon),
 Ruler (line), and a Cancel button (only when there's something to cancel).
+While a draw mode is active, the parent Tools button echoes the active
+mode in its icon + label (Lasso / Ruler) and stays in pressed state.
 
 ### Filter sheet
 Native HTMLDialogElement (`showModal()`) gives focus trap, Escape-to-

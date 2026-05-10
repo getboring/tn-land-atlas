@@ -84,11 +84,40 @@ TypeScript errors in `functions/` go undetected. The Cloudflare Pages
 deploy bundles `functions/` to JS without type-checking — if the local
 build doesn't check it, nothing does.
 
-### 7. One basemap, no toggle
-The Esri World Imagery raster source is the only basemap. The NAIP toggle
-has been removed (USGS coverage was capped at z16 anyway, leaving a
-confusing UX). If you reintroduce a second basemap, set `bounds` to the
-TN superset and verify zoom coverage with `curl` probes first.
+### 7. Basemap switching is allowed; every source must clear four checks
+
+The Layers popover (bottom action bar) lets the user pick between four
+basemaps — Satellite (Esri World Imagery, default), Streets
+(OpenStreetMap), Topographic (USGS), Hybrid (Esri imagery + reference
+labels overlay). Contour lines are an overlay sub-toggle inside the
+same popover.
+
+Adding a new basemap or overlay raster source is allowed, but every
+new source MUST satisfy all four:
+
+1. **Bounds** — set `bounds: TN_BOUNDS` (defined where `style.sources`
+   is built) so MapLibre never requests tiles outside the data area.
+   Without this, panning over the ocean or out of TN would burn the
+   upstream's quota for nothing.
+2. **CSP `connect-src`** — the tile host must already be in
+   `public/_headers` `connect-src`, or you add it in the same PR.
+   See rule #21.
+3. **Attribution** — set `attribution` on the source so the
+   `AttributionControl` displays the upstream's required credit. Public
+   upstreams (USGS, OSM) require this by their license.
+4. **Zoom coverage probe** — verify the upstream actually serves tiles
+   at the zooms you list (`minzoom`/`maxzoom`). USGS Topo, for example,
+   caps at z16 — listing maxzoom 19 there would silently 404 above 16.
+   `curl -I` a few `{z}/{x}/{y}.png` URLs across the range before
+   committing.
+
+Visibility is toggled via `setLayoutProperty('id', 'visibility', …)`,
+NOT via `setStyle()`. setStyle wipes the parcel/contour/selection
+layers and forces a full restyle; a visibility toggle is one frame and
+keeps every data layer alive. The `BASEMAP_LAYERS` map (one entry per
+`Basemap`) is the single source of truth for which raster ids are
+visible per mode — Hybrid renders two layers (imagery + labels) which
+is why the data shape is `Record<Basemap, string[]>`.
 
 ### 8. Parcels load only at zoom >= 13
 At lower zooms the bbox covers thousands of parcels and the response is too
@@ -253,36 +282,62 @@ new projects. **Holston Scout is grandfathered into the
 Cloudflare-Pages-plus-Supabase shape it shipped with.** Don't migrate
 without an explicit user request.
 
-## Brand system (Holston Scout)
+## Brand system (Holston Scout, HolstonBuilder family)
 
-The brand identity ships in three files plus tokens:
+Scout was rebranded into the HolstonBuilder design family. Both products
+now share a single token system so they read as one product line:
+
+- **Background layers** — `bg #02040A` (void), `surface #0F1729`,
+  `surface-elevated #1A2332`, `surface-pressed #1E293B`.
+- **Borders** — `border-subtle #1E293B`, `border-default #334155`,
+  `border-strong #475569`.
+- **Text** — `text-primary #F8FAFC`, `text-secondary #CBD5E1`,
+  `text-tertiary #94A3B8`, `text-muted #64748B`,
+  `text-inverse #020617`.
+- **Brand (amber)** — `brand #F59E0B` is the action color (CTAs,
+  selected parcel, focus ring); `brand-strong #FCD34D` for hover/highlight
+  states; soft tints via `brand/20`/`brand/40` opacity utilities.
+- **Stamp / functional** — `stamp #DC2626` for irreversible/escalation,
+  plus `success #22C55E`, `warning #FBBF24`, `danger #F87171`,
+  `info #60A5FA`.
+- **Map roles** — `map-parcel-default #94A3B8` (calm slate-blue),
+  `map-parcel-hover #FCD34D`, `map-parcel-selected #F59E0B`,
+  `map-label-halo #F8FAFC`, `map-label-primary #02040A`.
+
+Tokens are mirrored byte-for-byte from `~/Projects/holstonbuilder`'s
+`tailwind.config.js` and `apps/app/global.css`. When HolstonBuilder
+updates a token, mirror it here.
+
+The brand identity ships in three files plus those tokens:
 
 - `src/components/HolstonChrome.tsx` — top chrome bar (48-52px). Holds
-  the wordmark + Survey Corner mark on the left, slots for future search
-  and auth on the center/right. Map fills the remaining viewport via
-  `flex-1`. Banner role + aria-label.
+  the wordmark + Survey Corner mark on the left, slots for future
+  search and auth on the center/right. Map fills the remaining
+  viewport via `flex-1`. Banner role + aria-label.
 - `src/components/SurveyCornerMark.tsx` — the geometric brand mark.
   Single SVG master at three lockups: inline (chrome), app-icon (with
-  navy-deep ring), one-color fallback. Mirrored in `public/favicon.svg`
-  and `public/og-image.svg`.
-- `src/index.css` — `@theme` block with the canonical palette
-  (navy / navy-deep / slate / forest / parchment / stone / copper /
-  copper-bright + functional success/warning/error/info), type stack
-  (Playfair Display / Source Sans 3 / IBM Plex Mono), spacing, motion,
-  shadows, z-index, plus semantic aliases (`text-primary`, `panel`,
-  `action`, `focus-ring`, etc.) and map-role tokens (`map-parcel-default`,
-  `map-parcel-hover`, `map-parcel-selected`).
+  bg ring), one-color fallback. Mirrored in `public/favicon.svg` and
+  `public/og-image.svg`. Outline is `border-default #334155`, accent
+  is `brand #F59E0B`.
+- `src/index.css` — `@theme` block holding the palette above, plus
+  spacing, motion, shadows, z-index, focus-ring rules, MapLibre
+  overrides, and a `@media print` block for parcel-handout printing.
+  Single Inter family across body + display
+  (`--font-sans`, `--font-display`); system monospace stack for data
+  (`--font-mono`).
 
-Map style is the single most distinctive surface. Default parcel outline
-is slate at 0.6 opacity (calm USGS-quad posture). Hover gets a copper-
-bright outline + copper fill at 0.14 alpha via feature-state. Selected
-parcel gets a copper outline + copper fill at 0.24 alpha + corner-node
-markers (parchment-filled, navy-stroked points at every polygon vertex —
-the Survey Corner brand mark in miniature).
+Map style is the single most distinctive surface. Default parcel
+outline is slate (`text-tertiary`) at 0.6 opacity (calm USGS-quad
+posture). Hover gets a `brand-strong` outline + `brand` fill at 0.14
+alpha via feature-state. Selected parcel gets a `brand` outline +
+`brand` fill at 0.24 alpha + corner-node markers (`text-primary` fill,
+`bg` stroke at every polygon vertex — the Survey Corner brand mark in
+miniature).
 
-Numeric data (parcel ID, acres, dollar amounts, dates, coordinates) all
-render in IBM Plex Mono with `font-variant-numeric: tabular-nums` via the
-`data-value` utility class. Caps labels use `data-label`.
+Numeric data (parcel ID, acres, dollar amounts, dates, coordinates)
+renders in the system monospace stack with
+`font-variant-numeric: tabular-nums` via the `data-value` utility.
+Caps labels use `data-label` (uppercase, tracked, `text-tertiary`).
 
 ### Tailwind v4 var() syntax (load-bearing)
 
