@@ -609,7 +609,11 @@ test.describe('Holston Scout', () => {
       return raw ? JSON.parse(raw) : null
     })
     expect(stored).not.toBeNull()
-    expect(stored.schemaVersion).toBe(1)
+    // Phase 6 bumped the store schemaVersion to 2 (structured warnings +
+    // optional Phase-6 snapshot fields). v1 reads from a pre-Phase-6
+    // session would migrate up on first read; live writes go straight
+    // to v2.
+    expect(stored.schemaVersion).toBe(2)
     expect(stored.footprints?.length).toBeGreaterThan(0)
     expect(stored.sessions?.length).toBeGreaterThan(0)
     expect(stored.sessions[0].footprintProjectId).toBe(stored.footprints[0].id)
