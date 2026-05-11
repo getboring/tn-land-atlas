@@ -123,6 +123,25 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
     return () => clearFitLayers(asFitTarget(map))
   }, [map])
 
+  // Escape closes fit mode. WCAG keyboard expectation for any
+  // dialog-style overlay; without this, keyboard-only users have no fast
+  // exit (they'd need to tab to the X button). We skip the handler when
+  // the user is typing into an input/textarea so it doesn't hijack form
+  // editing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const t = e.target as HTMLElement | null
+      const inField =
+        t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      if (inField) return
+      e.preventDefault()
+      onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   const footprints = useFootprints()
   // explicitId tracks the user's last interaction:
   //   - string  : they picked an existing footprint by id
@@ -704,7 +723,17 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       geometry: validated.geom,
       capturedAt: now,
     }
-    if (!snapshot.parcelKey) return // can't reference without a key
+    if (!snapshot.parcelKey) {
+      // Without a GISLINK we have no stable handle for the FitSession's
+      // parcelKey. Real ArcGIS records always carry one; this guard only
+      // fires on test fixtures or a future upstream change. Surface it as
+      // a notice instead of silently dropping the click.
+      flashProjectNotice(
+        'err',
+        'Cannot save placement: this parcel has no GISLINK reference. Try selecting it again.',
+      )
+      return
+    }
 
     // 4. Persist the FitSession.
     const session: FitSession = {

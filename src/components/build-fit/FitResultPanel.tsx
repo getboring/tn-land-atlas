@@ -16,7 +16,7 @@
 
 import { Check, AlertTriangle, Info, Save, RotateCcw, Printer, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { SetbackConfig } from '@/lib/build-fit/schemas'
+import { MAX_DIM_FT, type SetbackConfig } from '@/lib/build-fit/schemas'
 
 export interface FitResultDisplay {
   fitsParcel: boolean | null
@@ -352,12 +352,13 @@ function SetbackBlock({
             <input
               type="number"
               min={0}
+              max={MAX_DIM_FT}
               step={1}
               aria-label="Custom uniform setback in feet"
               value={config.setbackFt}
               onChange={(e) => {
                 const n = Number(e.target.value)
-                if (Number.isFinite(n) && n >= 0)
+                if (Number.isFinite(n) && n >= 0 && n <= MAX_DIM_FT)
                   onChange({ mode: 'uniform', setbackFt: n })
               }}
               className="w-20 bg-white/5 border border-border-default text-text-primary text-sm px-2 h-8 rounded-md outline-none focus:border-brand data-value"
@@ -476,6 +477,7 @@ function ManualField({
       <input
         type="number"
         min={0}
+        max={MAX_DIM_FT}
         step={1}
         aria-label={`${label} setback in feet`}
         value={value ?? ''}
@@ -486,7 +488,7 @@ function ManualField({
             return
           }
           const n = Number(raw)
-          if (Number.isFinite(n) && n >= 0) onChange(n)
+          if (Number.isFinite(n) && n >= 0 && n <= MAX_DIM_FT) onChange(n)
         }}
         className="w-full bg-white/5 border border-border-default text-text-primary text-base sm:text-sm px-2 h-8 rounded-md outline-none focus:border-brand data-value"
       />

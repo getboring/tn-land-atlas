@@ -913,6 +913,10 @@ export default function ParcelMap() {
       setTimeout(() => setShareCopied(false), 1800)
     } catch (e) {
       console.error('[share] clipboard write failed', e)
+      // Common when the page isn't focused (permission denied on the
+      // clipboard API) or in private-mode browsers. Surface to the user
+      // instead of silently failing.
+      setErrorToast("Couldn't copy the share link. Select the address bar and copy the URL manually.")
     }
   }, [])
 
