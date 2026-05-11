@@ -363,6 +363,8 @@ curl -s -X POST -H 'content-type: application/json' \
 | MapLibre 404s in console | A basemap source's listed maxzoom exceeds upstream coverage (USGS Topo caps at z16). Re-probe per AGENTS.md rule #7 covenant or a typo in the tile URL template. |
 | Social share preview is broken | The `og:image` in `index.html` is `og-image.svg`. Some platforms (older Facebook, some Slack tenants) don't render SVG OG cards. Swap to a 1200x630 PNG if it matters for a launch. |
 | JS-disabled visitors see blank page | `index.html` has a `<noscript>` fallback. Verify by viewing source on `view-source:https://tn-land-atlas.pages.dev/` and confirm the noscript block is present in the served HTML. |
+| `/api/flood` returns 502 in production | FEMA's CloudFront WAF blocks anonymous traffic from Cloudflare Worker IPs — both MapServer and FeatureServer paths verified blocked despite User-Agent identification. The build-fit workspace already degrades silently (no flood warning, no overlay, no snapshot field). To restore flood data, pre-bake FEMA NFHL tiles to R2 (NFHL is public domain so redistribution is fine), or proxy through a residential-IP host. Avoid: free public CORS proxies (unreliable, latency). |
+| `/api/roads` returns 502 in production | Overpass API rate-limits or blocks anonymous Worker IPs. A stable User-Agent (already set) usually fixes this; if not, switch to a pre-baked OSM extract on R2 or a Tegola tile server. The auto-classify-edge feature degrades silently when this fails. |
 
 ## Convex / D1 / better-auth
 
