@@ -173,3 +173,30 @@ export async function queryRoads(
 ): Promise<RoadCollection> {
   return postJson<RoadCollection>('/api/roads', { west, south, east, north }, signal)
 }
+
+// ── Phase 6f: slope ─────────────────────────────────────────────────────
+
+/** Slope readout for the parcel: mean / max slope percent across samples. */
+export interface SlopeResult {
+  /** Mean slope across the corner-to-center samples, in percent rise/run. */
+  meanSlopePct: number | null
+  /** Maximum slope across the corner-to-center samples, in percent. */
+  maxSlopePct: number | null
+  /** How many of the 5 sample points returned elevation data (0..5). */
+  samplesUsed: number
+}
+
+/**
+ * Fetch parcel slope summary from USGS 3DEP. The server samples 5
+ * elevation points (4 corners + center of bbox) and computes slope as
+ * |dz| / d × 100 between center and each corner.
+ */
+export async function queryParcelSlope(
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+  signal?: AbortSignal,
+): Promise<SlopeResult> {
+  return postJson<SlopeResult>('/api/slope', { west, south, east, north }, signal)
+}

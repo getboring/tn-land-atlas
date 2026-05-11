@@ -82,7 +82,13 @@ import {
   autoClassifyFrontEdge,
   type FloodSeverity,
 } from '@/lib/build-fit/geometry'
-import { queryFloodZones, queryRoads, type FloodZoneCollection } from '@/lib/api'
+import {
+  queryFloodZones,
+  queryRoads,
+  queryParcelSlope,
+  type FloodZoneCollection,
+  type SlopeResult,
+} from '@/lib/api'
 import {
   useFootprints,
   upsertFootprint,
@@ -210,6 +216,11 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
   // below so we don't fight the react-hooks set-state-in-effect rule.
   const [floodZones, setFloodZones] = useState<FloodZoneCollection | null>(null)
 
+  // Phase 6f: USGS 3DEP slope summary for the parcel. Fetched once on
+  // mount. Null while in-flight or on failure; `samplesUsed` distinguishes
+  // "checked, no data" (0) from "didn't run" (state is still null).
+  const [slope, setSlope] = useState<SlopeResult | null>(null)
+
   // ── Phase 6e: fetch FEMA flood zones intersecting the parcel ─────────
   // One fetch per parcel mount. If the parcel changes (new selection),
   // the workspace unmounts/remounts and this re-fires. Result drives:
@@ -258,6 +269,51 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         // workspace on a FEMA outage.
         if (err instanceof Error && err.name === 'AbortError') return
         console.error('[flood] fetch failed', err)
+      })
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [validated])
+
+  // ── Phase 6f: fetch USGS 3DEP slope summary for the parcel ────────────
+  // One fetch per parcel mount. Samples 4 corners + center, computes
+  // slope as |dz| / d. Failures degrade silently (no slope warning, no
+  // snapshot field). Result drives the structured warning and the
+  // snapshot's meanSlopePct.
+  useEffect(() => {
+    if (!validated.ok) return
+    let cancelled = false
+    const controller = new AbortController()
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    const rings =
+      validated.geom.type === 'Polygon'
+        ? validated.geom.coordinates
+        : validated.geom.coordinates.flat()
+    for (const ring of rings) {
+      for (const pt of ring) {
+        const x = pt[0]
+        const y = pt[1]
+        if (typeof x !== 'number' || typeof y !== 'number') continue
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+    if (
+      !Number.isFinite(minX) || !Number.isFinite(minY) ||
+      !Number.isFinite(maxX) || !Number.isFinite(maxY)
+    ) return
+    queryParcelSlope(minX, minY, maxX, maxY, controller.signal)
+      .then((data) => {
+        if (cancelled) return
+        setSlope(data)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        if (err instanceof Error && err.name === 'AbortError') return
+        console.error('[slope] fetch failed', err)
       })
     return () => {
       cancelled = true
@@ -498,6 +554,44 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       warnings.push(warn('info', 'geometry', 'multipolygon-largest', norm.warning))
     }
 
+    // Phase 6f: slope warning. Tier thresholds:
+    //   < 5%   gentle (no warning)
+    //   5..15  moderate (info)
+    //   15..25 steep (warning) — typical septic / foundation limit
+    //   25+    severe (error) — almost always means an engineered slab
+    if (slope && slope.meanSlopePct != null && slope.maxSlopePct != null) {
+      const mean = slope.meanSlopePct
+      const max = slope.maxSlopePct
+      let sev: FitWarning['severity'] | null = null
+      let code = ''
+      if (max >= 25 || mean >= 20) {
+        sev = 'error'
+        code = 'slope-severe'
+      } else if (max >= 15 || mean >= 10) {
+        sev = 'warning'
+        code = 'slope-steep'
+      } else if (max >= 5 || mean >= 3) {
+        sev = 'info'
+        code = 'slope-moderate'
+      }
+      if (sev) {
+        warnings.push(
+          warn(
+            sev,
+            'slope',
+            code,
+            `Parcel slope: mean ${mean.toFixed(1)}%, max ${max.toFixed(1)}%. ${
+              sev === 'error'
+                ? 'Engineered foundation + significant grading typically required.'
+                : sev === 'warning'
+                  ? 'May limit septic / driveway / foundation choices; verify with site engineer.'
+                  : 'Moderate slope; plan for site grading.'
+            }`,
+          ),
+        )
+      }
+    }
+
     // Phase 6e: flood-zone warning. Severity comes from the worst zone
     // touching the parcel; the message includes the FLD_ZONE code so the
     // user can look it up. 'none' is suppressed (no flood concern).
@@ -682,7 +776,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       },
       subtitle: `${draftValues.widthFt} × ${draftValues.lengthFt} ft @ ${draftValues.rotationDeg}°`,
     }
-  }, [validated, draftValues, userCenter, setbackConfig, edgeLabels, floodSeverity, floodZone])
+  }, [validated, draftValues, userCenter, setbackConfig, edgeLabels, floodSeverity, floodZone, slope])
 
   // ── Push computed footprint + center handle to the map ──────────────────
   useEffect(() => {
@@ -1152,6 +1246,10 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         floodZones != null
           ? floodZone
           : undefined,
+      // Phase 6f: snapshot mean slope percent. null = checked but DEM
+      // returned no data (outside coverage). undefined = lookup never
+      // ran (fetch error / offline).
+      meanSlopePct: slope != null ? (slope.meanSlopePct ?? null) : undefined,
     }
     if (!snapshot.parcelKey) {
       // Without a GISLINK we have no stable handle for the FitSession's
@@ -1202,7 +1300,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       setPlacementSavedAt(null)
       savedFlashTimeoutRef.current = null
     }, 1500)
-  }, [computed, currentProject, draftValues, parcel, validated, selectFootprint, setbackConfig, edgeLabels, floodZone, floodZones, flashProjectNotice])
+  }, [computed, currentProject, draftValues, parcel, validated, selectFootprint, setbackConfig, edgeLabels, floodZone, floodZones, slope, flashProjectNotice])
 
   // Make sure a pending flash-clear can't fire after unmount.
   useEffect(() => {
@@ -1426,6 +1524,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
           envelopeSqft={computed.result.envelopeSqft}
           generatedAt={new Date().toISOString()}
           floodZone={floodZones ? floodZone : undefined}
+          meanSlopePct={slope ? (slope.meanSlopePct ?? null) : undefined}
         />
       )}
     </div>

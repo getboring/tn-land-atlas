@@ -60,6 +60,10 @@ interface FitReportProps {
   /** Phase 6e: worst FEMA flood zone touching the parcel. `undefined`
    *  means the lookup didn't run; null means "checked, not in SFHA". */
   floodZone?: string | null
+  /** Phase 6f: mean slope across the parcel from USGS 3DEP samples,
+   *  in percent. `undefined` means the lookup didn't run; null means
+   *  "checked, no DEM coverage". */
+  meanSlopePct?: number | null
 }
 
 export function FitReport({
@@ -74,6 +78,7 @@ export function FitReport({
   envelopeSqft,
   generatedAt,
   floodZone,
+  meanSlopePct,
 }: FitReportProps) {
   const p = parcel.properties
   // Memo the SVG diagram so a parent re-render that changes only the
@@ -122,6 +127,13 @@ export function FitReport({
           <Row
             label="FEMA flood zone"
             value={floodZone ?? 'Outside SFHA'}
+            mono
+          />
+        )}
+        {meanSlopePct !== undefined && (
+          <Row
+            label="Mean slope"
+            value={meanSlopePct != null ? `${meanSlopePct.toFixed(1)}%` : 'No DEM data'}
             mono
           />
         )}
