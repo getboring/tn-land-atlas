@@ -9,11 +9,11 @@
 // What this component does:
 // - Initializes one MapLibre Map and one Terra Draw instance.
 // - Owns view state, parcel selection, search results, recent parcels,
-//   saved parcels, the lasso / ruler tools, filter sheet state,
+//   saved parcels, the ruler tool, filter sheet state,
 //   permalink sync, layer-toggle state (basemap / contour), and the
 //   entry point into BuildFitWorkspace.
 // - Holds REST plumbing (queryParcelsByBbox, searchParcels,
-//   getParcelByKey, getPropertyData, queryParcelsInPolygon) via
+//   getParcelByKey, getPropertyData) via
 //   per-call AbortControllers so the latest fetch always wins.
 //
 // What lives elsewhere:
@@ -38,13 +38,11 @@ import React, { useEffect, useRef, useState, useCallback, lazy, Suspense } from 
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import mlcontour from 'maplibre-contour'
-import { MaplibreExportControl } from '@watergis/maplibre-gl-export'
-import '@watergis/maplibre-gl-export/dist/maplibre-gl-export.css'
-import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey, queryParcelsInPolygon } from '@/lib/api'
+import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey } from '@/lib/api'
 import { toParcelFeature, type ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Search, X, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter, Star, Copy, Map as MapIcon, Eye, Clock, Layers, Home, Printer, Keyboard, AlertTriangle } from 'lucide-react'
+import { Search, X, Building2, TrendingUp, Users, Share2, Check, Mountain, Ruler, LocateFixed, Filter, Star, Copy, Map as MapIcon, Eye, Clock, Layers, Home, Printer, Keyboard, AlertTriangle } from 'lucide-react'
 import { toggleSaved, useIsSaved, pushRecent, useRecents, type RecentParcel } from '@/lib/storage'
 import { cn, fmtMoney, fmtDate } from '@/lib/utils'
 import type { PropertyData } from '@/lib/supabase-queries'
@@ -235,7 +233,6 @@ export default function ParcelMap() {
   const [errorToast, setErrorToast] = useState<string | null>(null)
   const [drawMode, setDrawModeState] = useState<DrawMode>('idle')
   const [rulerDistance, setRulerDistance] = useState<string | null>(null)
-  const [toolsOpen, setToolsOpen] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
   const [filters, setFilters] = useState<ParcelFilters>(emptyFilters)
   const drawRef = useRef<TerraDraw | null>(null)
@@ -361,17 +358,6 @@ export default function ParcelMap() {
     })
     m.addControl(geolocate, 'bottom-right')
     m.addControl(new maplibregl.FullscreenControl(), 'bottom-right')
-    // Export the current map view as PDF / PNG / JPG / SVG. The control adds
-    // a printer icon to the cluster; users pick format + paper size.
-    m.addControl(
-      new MaplibreExportControl({
-        DPI: 300,
-        Filename: 'tn-land-atlas',
-        Crosshair: true,
-        PrintableArea: true,
-      }),
-      'bottom-right',
-    )
     geolocateRef.current = geolocate
     // 'locating' state powers the pulse animation on the bottom-bar Locate
     // button. MapLibre's native control doesn't expose a 'requesting' event,
@@ -614,33 +600,9 @@ export default function ParcelMap() {
     ro.observe(mapContainer.current)
 
     // Terra Draw lazily — once the map is loaded so its layers/sources exist.
+    // Ruler-only as of the Phase 6 polish pass; lasso was retired.
     m.once('load', () => {
       const draw = createDraw(m, {
-        onPolygonComplete: (ring) => {
-          // ring is the polygon outer ring including the closing duplicate
-          // vertex. Send to /api/parcels with polygon spatial filter.
-          void (async () => {
-            setLoading(true)
-            try {
-              const data = await queryParcelsInPolygon(ring, COUNTY_ALL)
-              rawParcelsRef.current = data as GeoJSON.FeatureCollection
-              const filtered = applyClientFilters(data as GeoJSON.FeatureCollection, filtersRef.current)
-              setSearchResults(filtered.features as ParcelFeature[])
-              const src = m.getSource('parcels') as maplibregl.GeoJSONSource | undefined
-              src?.setData(filtered)
-              setParcelCount(filtered.features.length)
-            } catch (e) {
-              console.error('[lasso] failed', e)
-              setSearchResults([])
-            } finally {
-              setLoading(false)
-              // Drop draw mode back to idle but keep the polygon visible until
-              // the user clears the result panel.
-              draw.setMode('static')
-              setDrawModeState('idle')
-            }
-          })()
-        },
         onLineComplete: (line) => {
           setRulerDistance(formatDistance(lineDistanceMeters(line)))
           draw.setMode('static')
@@ -649,7 +611,7 @@ export default function ParcelMap() {
       })
       draw.start()
       // Default to static so map clicks pass through to parcel selection.
-      // The Lasso / Ruler buttons switch into polygon / linestring mode.
+      // The Ruler button switches into linestring mode.
       draw.setMode('static')
       drawRef.current = draw
     })
@@ -854,7 +816,6 @@ export default function ParcelMap() {
     //     should not coexist with active drawing)
     //   - keep selectedParcel intact
     setLayersOpen(false)
-    setToolsOpen(false)
     setFilterOpen(false)
     if (drawMode !== 'idle') {
       const d = drawRef.current
@@ -1179,26 +1140,16 @@ export default function ParcelMap() {
           <ActionBarButton
             label="Map layers"
             pressed={layersOpen || basemap !== 'satellite' || contoursVisible}
-            onClick={() => {
-              setLayersOpen((v) => !v)
-              setToolsOpen(false)
-            }}
+            onClick={() => setLayersOpen((v) => !v)}
             icon={<Layers className="w-5 h-5" />}
             text="Layers"
           />
           <ActionBarButton
-            label={drawMode === 'lasso' ? 'Lasso active' : drawMode === 'ruler' ? 'Ruler active' : 'Drawing tools'}
-            pressed={toolsOpen || drawMode !== 'idle'}
-            onClick={() => {
-              setToolsOpen((v) => !v)
-              setLayersOpen(false)
-            }}
-            icon={
-              drawMode === 'lasso'
-                ? <Lasso className="w-5 h-5" />
-                : <Ruler className="w-5 h-5" />
-            }
-            text={drawMode === 'lasso' ? 'Lasso' : drawMode === 'ruler' ? 'Ruler' : 'Tools'}
+            label={drawMode === 'ruler' ? 'Ruler active — click to draw, double-click to finish' : 'Measure distance with the ruler'}
+            pressed={drawMode === 'ruler'}
+            onClick={() => switchDrawMode('ruler')}
+            icon={<Ruler className="w-5 h-5" />}
+            text="Ruler"
           />
           <ActionBarButton
             label={filtersActiveCount(filters) > 0 ? `Filter · ${filtersActiveCount(filters)}` : 'Filter'}
@@ -1298,49 +1249,6 @@ export default function ParcelMap() {
                 </span>
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tools popover — appears above the bottom bar when Tools is pressed. */}
-      {toolsOpen && (
-        <div
-          role="menu"
-          aria-label="Drawing tools"
-          className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none [&>*]:pointer-events-auto"
-        >
-          <div className="flex items-center gap-1 rounded-2xl bg-surface/95 backdrop-blur border border-border-default p-1 shadow-xl">
-            <ActionBarButton
-              label="Lasso parcels"
-              pressed={drawMode === 'lasso'}
-              onClick={() => {
-                switchDrawMode('lasso')
-                setToolsOpen(false)
-              }}
-              icon={<Lasso className="w-5 h-5" />}
-              text="Lasso"
-            />
-            <ActionBarButton
-              label="Measure distance"
-              pressed={drawMode === 'ruler'}
-              onClick={() => {
-                switchDrawMode('ruler')
-                setToolsOpen(false)
-              }}
-              icon={<Ruler className="w-5 h-5" />}
-              text="Ruler"
-            />
-            {(drawMode !== 'idle' || rulerDistance) && (
-              <ActionBarButton
-                label="Cancel drawing"
-                onClick={() => {
-                  switchDrawMode('idle')
-                  setToolsOpen(false)
-                }}
-                icon={<MousePointer2 className="w-5 h-5" />}
-                text="Cancel"
-              />
-            )}
           </div>
         </div>
       )}
@@ -1483,15 +1391,23 @@ export default function ParcelMap() {
                   <button
                     onClick={sharePermalink}
                     aria-label="Copy share link"
-                    className="inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
+                    className="inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10 print:hidden"
                     title={shareCopied ? 'Link copied' : 'Copy link to this parcel'}
                   >
                     {shareCopied ? <Check className="w-4 h-4 text-green-400" /> : <Share2 className="w-4 h-4" />}
                   </button>
                   <button
+                    onClick={() => window.print()}
+                    aria-label="Print parcel handout"
+                    title="Print this parcel as a one-page handout"
+                    className="inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10 print:hidden"
+                  >
+                    <Printer className="w-4 h-4" />
+                  </button>
+                  <button
                     onClick={clearSelection}
                     aria-label="Close property details"
-                    className="inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10"
+                    className="inline-flex items-center justify-center w-10 h-10 rounded-md text-text-tertiary hover:text-white hover:bg-white/10 print:hidden"
                   >
                     <X className="w-4 h-4" />
                   </button>

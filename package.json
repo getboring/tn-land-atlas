@@ -21,7 +21,6 @@
     "@turf/destination": "^7.3.5",
     "@turf/helpers": "^7.3.5",
     "@turf/point-to-line-distance": "^7.3.5",
-    "@watergis/maplibre-gl-export": "^4.1.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",

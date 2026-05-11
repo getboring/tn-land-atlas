@@ -4,11 +4,13 @@
 // in the browser bundle. Each function corresponds one-to-one with a route
 // in `functions/api/`:
 //
-//   queryParcelsByBbox      -> POST /api/parcels   (bbox path)
-//   queryParcelsInPolygon   -> POST /api/parcels   (polygon path, lasso)
+//   queryParcelsByBbox      -> POST /api/parcels
 //   searchParcels           -> POST /api/search
 //   getParcelByKey          -> GET  /api/parcel?key=...
 //   getPropertyData         -> POST /api/property
+//   queryFloodZones         -> POST /api/flood
+//   queryRoads              -> POST /api/roads
+//   queryParcelSlope        -> POST /api/slope
 //
 // All POSTs accept an optional AbortSignal so the caller can cancel
 // in-flight requests when the user navigates or re-types. Failures throw
@@ -64,18 +66,6 @@ export async function searchParcels(
   signal?: AbortSignal,
 ): Promise<ParcelCollection> {
   return postJson<ParcelCollection>('/api/search', { query, county }, signal)
-}
-
-/**
- * Fetch parcels whose geometry intersects a user-drawn lasso polygon.
- * Polygon must be a closed `[lng, lat][]` ring with at least 4 vertices;
- * the server validates and returns 400 on shape or out-of-region failures.
- */
-export async function queryParcelsInPolygon(
-  polygon: [number, number][],
-  county: string,
-): Promise<ParcelCollection> {
-  return postJson<ParcelCollection>('/api/parcels', { polygon, county })
 }
 
 /**

@@ -12,7 +12,6 @@
 // - validateCounty(input)              -> County or null
 // - validateBbox(w, s, e, n)           -> normalized bbox or null
 // - validateQuery(input)               -> sanitized search string or null
-// - validatePolygonRing(input)         -> closed [lng, lat][] ring or null
 //
 // Invariants:
 // - Every validator returns null on any rejected input. Routes must treat
@@ -85,39 +84,3 @@ export function validateQuery(input: unknown): string | null {
   return trimmed.replace(/[%_]/g, '')
 }
 
-// Validate a closed polygon ring as an array of [lng, lat] pairs. Caps at
-// 200 vertices to keep ArcGIS request size sane and rejects rings that lie
-// outside our TN superset.
-const MAX_RING_VERTICES = 200
-
-/**
- * Narrow an untrusted polygon ring to a closed `[lng, lat][]` array.
- *
- * Caps at {@link MAX_RING_VERTICES} so a hostile caller can't blow up ArcGIS
- * request size. Vertices outside the TN superset are rejected the same way
- * {@link validateBbox} rejects out-of-region bboxes. The returned ring is
- * always closed (last point equals first); if the caller didn't close the
- * ring themselves we close it here.
- *
- * @returns the validated ring, or `null` for any structural or out-of-range
- *   failure. Callers should return `400 Invalid polygon` on null.
- */
-export function validatePolygonRing(input: unknown): [number, number][] | null {
-  if (!Array.isArray(input)) return null
-  if (input.length < 4 || input.length > MAX_RING_VERTICES) return null
-  const ring: [number, number][] = []
-  for (const pt of input) {
-    if (!Array.isArray(pt) || pt.length !== 2) return null
-    const [lng, lat] = pt as [unknown, unknown]
-    if (typeof lng !== 'number' || typeof lat !== 'number') return null
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null
-    if (lng < TN_MIN_LON || lng > TN_MAX_LON) return null
-    if (lat < TN_MIN_LAT || lat > TN_MAX_LAT) return null
-    ring.push([lng, lat])
-  }
-  // Close the ring if the caller didn't already.
-  const [fx, fy] = ring[0]
-  const [lx, ly] = ring[ring.length - 1]
-  if (fx !== lx || fy !== ly) ring.push([fx, fy])
-  return ring
-}
