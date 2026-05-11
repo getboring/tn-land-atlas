@@ -207,8 +207,11 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
   // largest-part exterior ring. Lives in workspace state until Save
   // Placement snapshots it into parcelSnapshot.edgeLabels. `editingEdges`
   // toggles the visible parcel-edges layer + click handler.
+  // `edgesMenuOpen` controls the popover that holds both the Edit toggle
+  // and the auto-classify action.
   const [edgeLabels, setEdgeLabels] = useState<EdgeLabel[]>([])
   const [editingEdges, setEditingEdges] = useState(false)
+  const [edgesMenuOpen, setEdgesMenuOpen] = useState(false)
 
   // Phase 6e: FEMA NFHL flood zones intersecting the parcel bbox.
   // Fetched once per parcel via /api/flood. `floodZones` is the raw
@@ -1360,35 +1363,20 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         />
         <button
           type="button"
-          onClick={() => setEditingEdges((v) => !v)}
-          aria-pressed={editingEdges}
-          aria-label={editingEdges ? 'Exit edge labeling' : 'Label parcel edges'}
-          title={editingEdges
-            ? 'Exit edge labeling'
-            : 'Click parcel edges to cycle front / side / rear / other'}
+          onClick={() => setEdgesMenuOpen((v) => !v)}
+          aria-pressed={edgesMenuOpen || editingEdges}
+          aria-haspopup="menu"
+          aria-expanded={edgesMenuOpen}
+          aria-label="Edge labeling menu"
+          title="Label parcel edges (front / side / rear) — manual or auto"
           className={cn(
             'inline-flex items-center justify-center h-10 w-10 rounded-lg backdrop-blur border',
-            editingEdges
+            editingEdges || edgesMenuOpen
               ? 'bg-brand text-white border-brand'
               : 'bg-surface/95 border-border-default text-text-tertiary hover:text-white hover:bg-white/10',
           )}
         >
           <Edit3 className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onAutoClassifyEdges}
-          disabled={autoClassifying || !validated.ok}
-          aria-label="Auto-label front edge from nearest road"
-          title="Auto-label front edge from nearest road (OSM)"
-          className={cn(
-            'inline-flex items-center justify-center h-10 w-10 rounded-lg bg-surface/95 backdrop-blur border border-border-default',
-            autoClassifying
-              ? 'text-text-tertiary cursor-not-allowed'
-              : 'text-text-tertiary hover:text-white hover:bg-white/10',
-          )}
-        >
-          <Compass className={cn('w-4 h-4', autoClassifying && 'animate-spin')} />
         </button>
         <button
           type="button"
@@ -1421,6 +1409,65 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
             <AlertTriangle className="w-3.5 h-3.5 flex-none mt-0.5" />
           )}
           <span className="flex-1">{projectNotice.text}</span>
+        </div>
+      )}
+
+      {/* Edges popover — Phase 6b + 6d. Sits under the top bar, anchored
+          to the Edges button. Holds the Edit-mode toggle and the
+          Auto-label-from-roads action. */}
+      {edgesMenuOpen && (
+        <div
+          role="menu"
+          aria-label="Edge labeling actions"
+          className="pointer-events-auto absolute top-14 left-3 right-3 sm:left-auto sm:w-[300px] rounded-lg bg-surface/95 backdrop-blur border border-border-default p-2 space-y-1 shadow-xl"
+        >
+          <button
+            type="button"
+            role="switch"
+            aria-checked={editingEdges}
+            onClick={() => setEditingEdges((v) => !v)}
+            className={cn(
+              'w-full flex items-center justify-between gap-3 px-3 h-10 rounded-lg text-left text-sm transition-colors',
+              editingEdges ? 'bg-brand/20 text-white' : 'hover:bg-white/5 text-text-primary',
+            )}
+          >
+            <span className="flex items-center gap-2">
+              <Edit3 className="w-4 h-4" /> Click-to-label mode
+            </span>
+            <span
+              aria-hidden="true"
+              className={cn(
+                'inline-block w-9 h-5 rounded-full relative transition-colors',
+                editingEdges ? 'bg-brand' : 'bg-white/15',
+              )}
+            >
+              <span
+                className={cn(
+                  'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                  editingEdges ? 'translate-x-4' : 'translate-x-0.5',
+                )}
+              />
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setEdgesMenuOpen(false); void onAutoClassifyEdges() }}
+            disabled={autoClassifying || !validated.ok}
+            className={cn(
+              'w-full flex items-center gap-2 px-3 h-10 rounded-lg text-left text-sm transition-colors',
+              autoClassifying
+                ? 'text-text-tertiary cursor-not-allowed'
+                : 'hover:bg-white/5 text-text-primary',
+            )}
+          >
+            <Compass className={cn('w-4 h-4', autoClassifying && 'animate-spin')} />
+            <span>{autoClassifying ? 'Finding nearest road…' : 'Auto-label front edge from roads'}</span>
+          </button>
+          <div className="px-3 pt-1 text-[10px] leading-snug text-text-tertiary">
+            In click-to-label mode, tap a parcel edge to cycle
+            {' '}front → side → rear → other → none. Auto-label picks the
+            edge closest to an OSM road and marks it as front.
+          </div>
         </div>
       )}
 
