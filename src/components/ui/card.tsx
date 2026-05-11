@@ -1,3 +1,11 @@
+// shadcn-style Card primitive.
+//
+// Used by the parcel detail panel as the surface wrapper. Each subcomponent
+// (Card / CardHeader / CardTitle / CardContent) is a thin styled <div>
+// or <h3> with the brand surface tokens baked into the defaults. Override
+// via className when you need a one-off; extend the defaults here when
+// you need a system-wide change.
+
 import * as React from "react"
 import { cn } from "@/lib/utils"
 

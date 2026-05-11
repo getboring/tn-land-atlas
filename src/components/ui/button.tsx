@@ -1,3 +1,11 @@
+// shadcn-style Button primitive.
+//
+// Composes class-variance-authority variants with our Tailwind token
+// system. Most app code uses raw <button> with utility classes; this
+// primitive exists for surfaces where the same button shape recurs
+// (dialogs, forms, action menus). Add new variants by extending
+// `buttonVariants` below, not by forking the component.
+
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"

@@ -1,45 +1,76 @@
-// Computed insights for parcel data. Every function here is pure (same input
-// -> same output) and deterministic (no Date.now() except where the caller
-// explicitly passes it in). That keeps them unit-testable without freezing
-// time in test setup.
+// Computed insights for parcel data.
 //
-// Conventions ("rules of thumb"):
-// - Money is whole dollars (ArcGIS gives whole-dollar APPRAISAL / PRICE).
-// - Distances in meters internally, formatted as feet/miles for display
-//   (US real-estate uses imperial).
+// Every function here is pure (same input -> same output) and deterministic
+// (no `Date.now()` except where the caller explicitly passes it in via
+// `now: Date`). That keeps them unit-testable without freezing time in
+// test setup, and lets the UI render with a deterministic timestamp when
+// printing a handout.
+//
+// Conventions:
+// - Money is whole dollars (the ArcGIS upstream returns whole-dollar
+//   APPRAISAL / PRICE; converting to cents would lose precision for no
+//   gain). The build-fit module separately uses integer cents for any
+//   user-entered money.
+// - Distances are in meters internally, formatted as feet/miles for
+//   display (US real-estate convention is imperial).
 // - Year length: 365.25 days (averages leap years).
-// - Earth radius: 6371000 m (haversine convention).
-// - Acreage tiers from rural-land-brokerage convention.
-// - Holding-duration tiers from how long-tenured ownership is bucketed by
-//   the appraisal community: < 2y recent, 2-15 established, 15-30 long-held,
+// - Earth radius: 6371000 m (haversine sphere convention, ~0.5%
+//   ellipsoid error globally, negligible at parcel scale).
+// - Acreage tiers come from the TN rural-land-brokerage convention.
+// - Holding-duration tiers match how the appraisal community buckets
+//   tenure: < 2y recent, 2-15 established, 15-30 long-held,
 //   30+ generational.
 //
-// Coordinate ordering: GeoJSON is always [longitude, latitude]. We follow
-// that throughout.
+// Coordinate ordering: GeoJSON is always `[longitude, latitude]`. We
+// follow that throughout. The detail panel surfaces lat/lng in display
+// order; the conversion happens at the UI seam, not here.
 
 import type { ParcelProperties, ParcelFeature } from './arcgis'
 
-// ----------------------------------------------------------------------------
-// $/acre — appraised value normalized by parcel size.
-// ----------------------------------------------------------------------------
+// ── $/acre ─────────────────────────────────────────────────────────────────
+
+/**
+ * Appraised value normalized by parcel size.
+ *
+ * @returns `appraisal / acres` (whole dollars per acre), or `null` when
+ *   either input is missing, non-positive, or non-finite.
+ *
+ * @example
+ * pricePerAcre(250000, 2.5) // -> 100000
+ * pricePerAcre(250000, 0)   // -> null
+ * pricePerAcre(null, 2.5)   // -> null
+ */
 export function pricePerAcre(appraisal: number | null | undefined, acres: number | null | undefined): number | null {
   if (!appraisal || !acres || appraisal <= 0 || acres <= 0) return null
   if (!Number.isFinite(appraisal) || !Number.isFinite(acres)) return null
   return appraisal / acres
 }
 
+/**
+ * Render a `$/ac` value for the parcel detail panel.
+ *
+ * @returns Whole-dollar, comma-formatted string with a `/ac` suffix,
+ *   or `null` when the input is null.
+ */
 export function formatPricePerAcre(usdPerAcre: number | null): string | null {
   if (usdPerAcre == null) return null
-  // Whole dollars, comma-formatted, with a /ac suffix.
   return `$${Math.round(usdPerAcre).toLocaleString()}/ac`
 }
 
-// ----------------------------------------------------------------------------
-// Years held — time since the last recorded sale.
-// `now` is injected so tests are reproducible without freezing time.
-// ----------------------------------------------------------------------------
+// ── Years held ─────────────────────────────────────────────────────────────
+
 const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000
 
+/**
+ * Fractional years between the parcel's last sale and `now`.
+ *
+ * @param saleDate Raw sale date as ArcGIS returned it (any of the three
+ *   formats {@link parseSaleDate} accepts).
+ * @param now Reference time. Defaults to `new Date()` but accept the
+ *   override so tests are time-independent.
+ * @returns Fractional years held, or `null` when the sale date is
+ *   missing, unparseable, or in the future.
+ */
 export function yearsHeld(saleDate: string | null | undefined, now: Date = new Date()): number | null {
   if (!saleDate) return null
   const d = parseSaleDate(saleDate)
@@ -49,8 +80,14 @@ export function yearsHeld(saleDate: string | null | undefined, now: Date = new D
   return ms / MS_PER_YEAR
 }
 
-// ArcGIS sometimes returns ISO strings, sometimes M/D/YYYY, sometimes a
-// number-of-millis-since-epoch. Cover the three common shapes.
+/**
+ * Parse a sale date from the three shapes the ArcGIS upstream returns:
+ * an ISO timestamp ("1988-09-16" or "1988-09-16T00:00:00Z"), a US-format
+ * "M/D/YYYY", or a number-of-milliseconds-since-epoch.
+ *
+ * @returns A valid Date, or `null` when the input doesn't match any
+ *   recognized shape.
+ */
 export function parseSaleDate(raw: string | number | null | undefined): Date | null {
   if (raw == null) return null
   if (typeof raw === 'number' && Number.isFinite(raw)) return new Date(raw)
@@ -72,11 +109,15 @@ export function parseSaleDate(raw: string | number | null | undefined): Date | n
   return null
 }
 
-// ----------------------------------------------------------------------------
-// Holding-duration tier.
-// ----------------------------------------------------------------------------
+// ── Holding-duration tier ──────────────────────────────────────────────────
+
+/** Buckets for "how long has the current owner held this parcel". */
 export type HoldingTier = 'recent' | 'established' | 'long-held' | 'generational'
 
+/**
+ * Bucket a years-held value into one of {@link HoldingTier}'s labels.
+ * Returns `null` for missing, non-finite, or negative inputs.
+ */
 export function holdingTier(years: number | null): HoldingTier | null {
   if (years == null || !Number.isFinite(years) || years < 0) return null
   if (years < 2) return 'recent'
@@ -85,11 +126,15 @@ export function holdingTier(years: number | null): HoldingTier | null {
   return 'generational'
 }
 
-// ----------------------------------------------------------------------------
-// Acreage tier — TN Rural Land Brokers convention.
-// ----------------------------------------------------------------------------
+// ── Acreage tier (TN Rural Land Brokers convention) ────────────────────────
+
+/** Parcel-size buckets used in the detail panel and filter sheet. */
 export type AcreageTier = 'lot' | 'residential' | 'country' | 'small-acreage' | 'medium-acreage' | 'large-acreage'
 
+/**
+ * Bucket a parcel by acres into a brokerage-convention tier.
+ * Returns `null` for missing, non-finite, or non-positive inputs.
+ */
 export function acreageTier(acres: number | null | undefined): AcreageTier | null {
   if (acres == null || !Number.isFinite(acres) || acres <= 0) return null
   if (acres < 0.25) return 'lot'
@@ -100,6 +145,7 @@ export function acreageTier(acres: number | null | undefined): AcreageTier | nul
   return 'large-acreage'
 }
 
+/** Map an {@link AcreageTier} to its human-readable label. */
 export function acreageTierLabel(t: AcreageTier): string {
   return {
     lot: 'Lot',
@@ -111,23 +157,38 @@ export function acreageTierLabel(t: AcreageTier): string {
   }[t]
 }
 
-// ----------------------------------------------------------------------------
-// Sale-to-appraisal ratio (last sale vs current appraisal).
-// ----------------------------------------------------------------------------
+// ── Sale-to-appraisal ratio ────────────────────────────────────────────────
+
+/**
+ * Last recorded sale price relative to the current appraisal.
+ *
+ * Ratios near 1.0 are expected on recent arms-length transactions; very
+ * low ratios may flag a non-arms-length transfer (gift, intra-family),
+ * very high ratios may flag an over-appraisal worth investigating.
+ *
+ * @returns `price / appraisal`, or `null` when either input is missing,
+ *   non-positive, or non-finite.
+ */
 export function saleToAppraisalRatio(price: number | null | undefined, appraisal: number | null | undefined): number | null {
   if (!price || !appraisal || price <= 0 || appraisal <= 0) return null
   if (!Number.isFinite(price) || !Number.isFinite(appraisal)) return null
   return price / appraisal
 }
 
-// ----------------------------------------------------------------------------
-// Owner-occupied vs absentee.
-// We compare the parcel address number against the mail address number,
-// require the mail city to match the parcel city, and the mail state to be TN.
-// Strict definition: both number AND city must match.
-// ----------------------------------------------------------------------------
+// ── Owner-occupied vs absentee ─────────────────────────────────────────────
+
+/** Whether the owner's mailing address matches the parcel address. */
 export type Occupancy = 'owner-occupied' | 'absentee'
 
+/**
+ * Classify a parcel as owner-occupied or absentee.
+ *
+ * Strict definition: the parcel address number AND the mailing address
+ * number must match, the cities must match, and the mailing state must
+ * be TN. Any other state (or any unparseable address) returns
+ * `'absentee'` when both addresses are present, `null` when either is
+ * missing.
+ */
 export function occupancy(p: Pick<ParcelProperties, 'ADDRESS' | 'MAILADDR' | 'CITYNAME' | 'MAILCITY' | 'STATE'>): Occupancy | null {
   const addr = (p.ADDRESS ?? '').trim()
   const mail = (p.MAILADDR ?? '').trim()
@@ -144,25 +205,35 @@ export function occupancy(p: Pick<ParcelProperties, 'ADDRESS' | 'MAILADDR' | 'CI
   return 'absentee'
 }
 
-// First contiguous run of digits in a string. ArcGIS addresses come as either
-// "112 FOXHALL CIR" or "FOXHALL CIR 112" — we don't care about position.
+/**
+ * First contiguous run of digits in a string.
+ *
+ * Used to extract the street number from an ArcGIS address, which can be
+ * formatted as either `"112 FOXHALL CIR"` or `"FOXHALL CIR 112"` — we
+ * don't care about position, only that we can recover a comparable number.
+ *
+ * @returns The digit run as a string, or `null` if no digits are present.
+ */
 export function firstNumberToken(s: string): string | null {
   const m = s.match(/\d+/)
   return m ? m[0] : null
 }
 
-// ----------------------------------------------------------------------------
-// Out-of-state owner mailing.
-// ----------------------------------------------------------------------------
+// ── Out-of-state owner mailing ─────────────────────────────────────────────
+
+/**
+ * True when the mailing state is set AND is not TN (case-insensitive,
+ * trimmed). A null/empty state is treated as in-state because the
+ * mailing-address state column is occasionally blank for TN owners.
+ */
 export function outOfState(state: string | null | undefined): boolean {
   if (!state) return false
   return state.trim().toUpperCase() !== 'TN'
 }
 
-// ----------------------------------------------------------------------------
-// Entity ownership — name-based regex against common business / org suffixes.
-// Returns null when the owner reads as an individual.
-// ----------------------------------------------------------------------------
+// ── Entity ownership ───────────────────────────────────────────────────────
+
+/** Categories of non-individual owners detectable from the OWNER string. */
 export type EntityKind = 'llc' | 'inc' | 'lp' | 'trust' | 'corp' | 'foundation' | 'church' | 'government'
 
 const ENTITY_PATTERNS: Array<[RegExp, EntityKind]> = [
@@ -176,6 +247,17 @@ const ENTITY_PATTERNS: Array<[RegExp, EntityKind]> = [
   [/\bCITY OF\b|\bCOUNTY OF\b|\bSTATE OF\b|\bUSA\b|\bUNITED STATES\b/i, 'government'],
 ]
 
+/**
+ * Detect whether an OWNER string names an LLC / corporation / trust /
+ * church / government entity, and which kind.
+ *
+ * Pattern-matched against the trailing legal-suffix conventions used in
+ * TN business filings. First match wins (the patterns are ordered by
+ * specificity).
+ *
+ * @returns The matched {@link EntityKind}, or `null` when the owner
+ *   reads as an individual.
+ */
 export function entityKind(owner: string | null | undefined): EntityKind | null {
   if (!owner) return null
   for (const [re, kind] of ENTITY_PATTERNS) {
@@ -184,24 +266,32 @@ export function entityKind(owner: string | null | undefined): EntityKind | null 
   return null
 }
 
-// ----------------------------------------------------------------------------
-// ownerSearchTerm — the right query string to find OTHER parcels owned by
-// the same person/entity. The naive approach (first whitespace token) breaks
-// horribly for entities: "JOHNSON CITY MEDICAL CENTER LLC" reduces to
-// "JOHNSON" which matches every Johnson on the tax roll.
-//
-// Strategy:
-//   - Entity: keep the distinctive name, drop the trailing legal suffix.
-//     e.g. "JOHNSON CITY MEDICAL CENTER LLC" -> "JOHNSON CITY MEDICAL CENTER"
-//   - Individual: surname (first token before "&" or ","). ArcGIS usually
-//     stores "LASTNAME FIRSTNAME" or "LASTNAME, FIRSTNAME".
-//   - Joint owners ("SMITH JOHN & MARY"): drop everything after "&".
-//
-// Return '' (not null) for empty owners so callers can use truthy checks.
-// ----------------------------------------------------------------------------
+// ── Owner search ───────────────────────────────────────────────────────────
+
 const TRAILING_SUFFIX_RE =
   /[\s,]*\b(LLC|L\.L\.C\.?|INC(?:ORPORATED)?|LP|L\.P\.?|LIMITED PARTNERSHIP|CORP(?:ORATION)?|TRUST(?:EE)?|FOUNDATION|FOUND\.?)\.?\s*$/i
 
+/**
+ * Compute the query string that will find OTHER parcels owned by the
+ * same person or entity.
+ *
+ * Strategy:
+ * - Entity owners: keep the distinctive name, drop the trailing legal
+ *   suffix. `"JOHNSON CITY MEDICAL CENTER LLC"` -> `"JOHNSON CITY MEDICAL CENTER"`.
+ * - Individual owners: surname only — the first token before `&` (joint
+ *   ownership) or `,` (formal name form). ArcGIS stores names as
+ *   `"LASTNAME FIRSTNAME"` or `"LASTNAME, FIRSTNAME"` so the first token
+ *   is the surname.
+ * - Joint owners `"SMITH JOHN & MARY"`: drop everything after `&` before
+ *   surname extraction.
+ *
+ * The naive alternative (split on whitespace, take first token) reduces
+ * `"JOHNSON CITY MEDICAL CENTER LLC"` to `"JOHNSON"`, which matches every
+ * Johnson on the tax roll — useless as a "find more of this owner" query.
+ *
+ * @returns The search term, or `''` (not null) for empty / whitespace
+ *   inputs so callers can use truthy checks.
+ */
 export function ownerSearchTerm(owner: string | null | undefined): string {
   if (!owner) return ''
   const trimmed = owner.trim()
@@ -220,13 +310,21 @@ export function ownerSearchTerm(owner: string | null | undefined): string {
   return cut.split(/\s+/)[0] ?? ''
 }
 
-// ----------------------------------------------------------------------------
-// Polygon centroid using the shoelace formula. For arbitrary closed rings;
-// degenerates gracefully (returns null) when area is zero or the input is
-// malformed.
-//
-// Accepts Polygon or MultiPolygon (ArcGIS occasionally returns the latter).
-// ----------------------------------------------------------------------------
+// ── Polygon centroid ───────────────────────────────────────────────────────
+
+/**
+ * Compute the centroid of a parcel polygon via the shoelace formula.
+ *
+ * Works on arbitrary closed rings. Degenerates gracefully — returns
+ * `null` when total signed area is zero (collinear ring) or the input
+ * is malformed.
+ *
+ * Accepts both `Polygon` and `MultiPolygon`; for a MultiPolygon, the
+ * centroid is the centroid of the largest part by absolute area. This
+ * matches the build-fit module's "normalize to largest part" convention.
+ *
+ * @returns `[lng, lat]`, or `null` for degenerate / malformed inputs.
+ */
 export function centroid(geometry: ParcelFeature['geometry'] | { type: 'MultiPolygon'; coordinates: number[][][][] }): [number, number] | null {
   const rings = geometry.type === 'Polygon'
     ? [geometry.coordinates]
@@ -263,13 +361,18 @@ export function centroid(geometry: ParcelFeature['geometry'] | { type: 'MultiPol
   return [bestCx, bestCy]
 }
 
-// ----------------------------------------------------------------------------
-// Haversine distance between two [lng, lat] points, meters.
-// Earth radius 6371000 m (sphere approximation; ~0.5% error globally,
-// negligible for parcel-scale measurements).
-// ----------------------------------------------------------------------------
+// ── Haversine distance ─────────────────────────────────────────────────────
+
 const EARTH_R = 6371000
 
+/**
+ * Great-circle distance between two `[lng, lat]` points, in meters.
+ *
+ * Uses the sphere approximation with Earth radius 6371000 m. The
+ * ellipsoid error is ~0.5% globally and negligible at parcel scale;
+ * if higher precision is needed, the build-fit module's Turf-backed
+ * `destination` / `pointToLineDistance` is the geodesic alternative.
+ */
 export function haversineMeters(a: [number, number], b: [number, number]): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180
   const dLat = toRad(b[1] - a[1])
@@ -280,9 +383,13 @@ export function haversineMeters(a: [number, number], b: [number, number]): numbe
   return 2 * EARTH_R * Math.asin(Math.sqrt(x))
 }
 
-// ----------------------------------------------------------------------------
-// Display formatters.
-// ----------------------------------------------------------------------------
+// ── Display formatters ─────────────────────────────────────────────────────
+
+/**
+ * Render a years-held value as `"X mo"` (under one year) or
+ * `"N yr"` / `"N yrs"` (one or more years). The month branch caps the
+ * minimum at 1 so a very recent sale doesn't read as "0 mo".
+ */
 export function formatYearsHeld(years: number | null): string | null {
   if (years == null || !Number.isFinite(years)) return null
   if (years < 1) {
@@ -292,17 +399,19 @@ export function formatYearsHeld(years: number | null): string | null {
   return `${Math.floor(years)} yr${Math.floor(years) === 1 ? '' : 's'}`
 }
 
+/** Render a 0..1 ratio as a whole-number percent. */
 export function formatRatioPercent(ratio: number | null): string | null {
   if (ratio == null || !Number.isFinite(ratio)) return null
   return `${Math.round(ratio * 100)}%`
 }
 
-// ----------------------------------------------------------------------------
-// passesFilters — does a parcel feature match a set of computed filter flags?
-// All flags are AND'd together; an unset flag is a pass.
-// `now` is injected so the recent/long-held checks are testable.
-// ----------------------------------------------------------------------------
+// ── Filter sheet predicate ─────────────────────────────────────────────────
 
+/**
+ * Active filter toggles for the Filter sheet UI. Each boolean is set
+ * true when the user has activated that specific filter; `minAcres` is
+ * non-null when the user has typed a number > 0.
+ */
 export interface ParcelFilterFlags {
   entityOnly: boolean
   outOfStateOnly: boolean
@@ -315,6 +424,16 @@ export interface ParcelFilterFlags {
 const RECENT_SALE_YRS = 5
 const LONG_HELD_YRS = 20
 
+/**
+ * Does a parcel match a set of filter flags?
+ *
+ * All flags AND together; an unset / false flag is always a pass. The
+ * recent-sale and long-held branches share a single `yearsHeld` call to
+ * avoid recomputing.
+ *
+ * @param now Reference time. Injectable so recent/long-held branches
+ *   are deterministic in tests.
+ */
 export function passesFilters(
   p: Pick<ParcelProperties, 'OWNER' | 'STATE' | 'ADDRESS' | 'MAILADDR' | 'CITYNAME' | 'MAILCITY' | 'CALC_ACRE' | 'SALEDATE'>,
   f: ParcelFilterFlags,
@@ -335,19 +454,24 @@ export function passesFilters(
   return true
 }
 
-// ----------------------------------------------------------------------------
-// External map deeplinks — meet the user's "open in Maps / Street View" need.
-// ----------------------------------------------------------------------------
+// ── External map deeplinks ─────────────────────────────────────────────────
+
+/**
+ * Apple Maps deeplink for a `[lng, lat]` point.
+ * @param label Optional search-result label to display when opened.
+ */
 export function appleMapsUrl(lng: number, lat: number, label?: string): string {
   const params = new URLSearchParams({ ll: `${lat},${lng}` })
   if (label) params.set('q', label)
   return `https://maps.apple.com/?${params.toString()}`
 }
 
+/** Google Maps search deeplink for a `[lng, lat]` point. */
 export function googleMapsUrl(lng: number, lat: number): string {
   return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
 }
 
+/** Google Street View deeplink for a `[lng, lat]` viewpoint. */
 export function googleStreetViewUrl(lng: number, lat: number): string {
   return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`
 }

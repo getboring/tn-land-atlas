@@ -27,42 +27,74 @@ import { z } from 'zod'
 const Position = z.array(z.number().finite()).min(2).max(3)
 const LinearRing = z.array(Position).min(4).max(10_000)
 
+/**
+ * GeoJSON Polygon. Coordinates is an array of linear rings — the first
+ * is the exterior ring, any remaining are interior rings (holes). At
+ * least the exterior is required; we cap at 1000 rings to refuse
+ * hostile "polygon with 100k holes" payloads from imported files.
+ */
 export const PolygonSchema = z.object({
   type: z.literal('Polygon'),
-  // At least the exterior ring is required. Interior rings (holes) are
-  // optional but go in this same array per the GeoJSON RFC.
-  // Upper cap on ring count prevents pathological "polygon with 100k
-  // holes" payloads from a hostile import.
   coordinates: z.array(LinearRing).min(1).max(1000),
 })
 
+/**
+ * GeoJSON MultiPolygon. One or more polygons; each polygon is itself
+ * an array of rings. ArcGIS occasionally returns this for parcels split
+ * by water or for non-contiguous deeded properties.
+ */
 export const MultiPolygonSchema = z.object({
   type: z.literal('MultiPolygon'),
-  // At least one part is required. Each part has its own exterior ring + holes.
   coordinates: z.array(z.array(LinearRing).min(1).max(1000)).min(1).max(1000),
 })
 
+/**
+ * The discriminated union used everywhere a parcel polygon flows through
+ * the build-fit module. Consumers should narrow on `geometry.type` rather
+ * than assume Polygon.
+ */
 export const PolygonOrMultiSchema = z.discriminatedUnion('type', [
   PolygonSchema,
   MultiPolygonSchema,
 ])
 
+/** GeoJSON LineString. Used in fit-conflict geometry only. */
 export const LineStringSchema = z.object({
   type: z.literal('LineString'),
   coordinates: z.array(Position).min(2),
 })
 
 // ── Footprint project (reusable building shape) ────────────────────────────
+//
+// Numeric caps for user-supplied dimensions are deliberately generous —
+// the schema's job is to refuse pathological data from imports, not to
+// reproduce zoning code. 100,000 ft (~19 miles per side) is well past any
+// sane building footprint or parcel; numbers beyond that are almost
+// certainly bad data or hostile input.
 
-// Numeric caps for user-supplied dimensions. 100,000 ft (~19 miles per
-// side) is well past any sane building footprint or parcel; numbers
-// beyond that are almost certainly bad import data.
+/** Hard cap on any dimension in feet (width, length, setback, etc.). */
 export const MAX_DIM_FT = 100_000
+/** Hard cap on any area in square feet. */
 export const MAX_AREA_SQFT = 10_000_000_000
+/** Max length of a footprint template name in characters. */
 export const MAX_FOOTPRINT_NAME_CHARS = 200
+/** Max value for the `stories` field. */
 export const MAX_STORIES = 1000
+/** Max length of any user-supplied notes field. */
 export const MAX_NOTES_CHARS = 5000
 
+/**
+ * A reusable building footprint template (a "40 × 60 shop", a "28 × 48
+ * ranch", etc.). Lives in the FootprintLibrary; can be reused across
+ * different parcels (FitSession).
+ *
+ * Invariants:
+ * - `geometry` is null until the user has placed/drawn the footprint
+ *   once. The form-time path stores the typed dimensions only; geometry
+ *   is computed at placement time.
+ * - `footprintSqft` is the COMPUTED area, not necessarily widthFt *
+ *   lengthFt (a drawn polygon will diverge from rectangle).
+ */
 export const FootprintProjectSchema = z.object({
   id: z.string().min(1).max(200),
   name: z.string().min(1).max(MAX_FOOTPRINT_NAME_CHARS),
@@ -84,13 +116,14 @@ export const FootprintProjectSchema = z.object({
   updatedAt: z.string(),
 })
 
-// ── Setback config (discriminated union on `mode`) ─────────────────────────
+// ── Setback config ─────────────────────────────────────────────────────────
+// Discriminated on `mode` so consumers narrow on the union tag instead of
+// peeking at fields. Zero is allowed on uniform (lets the user clear the
+// envelope without switching mode); negative is never valid.
 
 const SetbackNoneSchema = z.object({ mode: z.literal('none') })
 const SetbackUniformSchema = z.object({
   mode: z.literal('uniform'),
-  // Non-negative: 0 is allowed (lets the user clear without switching mode),
-  // negative makes no physical sense.
   setbackFt: z.number().nonnegative().max(MAX_DIM_FT),
 })
 const SetbackManualSchema = z.object({
@@ -101,14 +134,27 @@ const SetbackManualSchema = z.object({
   notes: z.string().max(MAX_NOTES_CHARS).nullable(),
 })
 
+/**
+ * The setback configuration for a fit session. One of three shapes:
+ * - `{ mode: 'none' }`: no envelope drawn.
+ * - `{ mode: 'uniform', setbackFt }`: single setback distance applied to
+ *   every parcel edge via Turf buffer.
+ * - `{ mode: 'manual', frontFt, sideFt, rearFt, notes }`: per-edge values
+ *   are captured but the envelope is NOT drawn until Phase 6 ships edge
+ *   classification.
+ */
 export const SetbackConfigSchema = z.discriminatedUnion('mode', [
   SetbackNoneSchema,
   SetbackUniformSchema,
   SetbackManualSchema,
 ])
 
-// ── Buildable envelope ─────────────────────────────────────────────────────
-
+/**
+ * The result of applying a {@link SetbackConfigSchema} to a parcel.
+ * `geometry` is null when mode is 'none' or 'manual' (manual records
+ * values but doesn't synthesize geometry yet). `warnings` carries
+ * planning-estimate disclaimers and "envelope collapsed" notices.
+ */
 export const BuildableEnvelopeSchema = z.object({
   mode: z.enum(['none', 'uniform', 'manual', 'computed']),
   geometry: PolygonOrMultiSchema.nullable(),
@@ -119,6 +165,12 @@ export const BuildableEnvelopeSchema = z.object({
 
 const FitConflictGeomSchema = z.union([LineStringSchema, PolygonSchema])
 
+/**
+ * One specific conflict between the proposed footprint and either the
+ * parcel boundary or the buildable envelope. Mostly forward-looking —
+ * Phase 1..5 emit a coarse "fitsParcel/fitsEnvelope" boolean rather
+ * than itemizing conflicts. Phase 6 will populate this list.
+ */
 export const FitConflictSchema = z.object({
   type: z.enum(['parcel-boundary', 'setback-envelope', 'invalid-geometry']),
   label: z.string(),
@@ -128,6 +180,12 @@ export const FitConflictSchema = z.object({
 
 // ── Fit result ─────────────────────────────────────────────────────────────
 
+/**
+ * Computed fit outcome for a placed footprint. `fitsEnvelope` is null
+ * when no envelope was configured. `measurementMethod` is currently a
+ * literal `'geodesic'`; future methods (e.g. survey-grade) would expand
+ * the union and bump `schemaVersion`.
+ */
 export const FitResultSchema = z.object({
   status: z.enum(['fits', 'conflict', 'unknown']),
   fitsParcel: z.boolean(),
@@ -145,6 +203,11 @@ export const FitResultSchema = z.object({
 
 // ── Footprint placement on a specific parcel ───────────────────────────────
 
+/**
+ * Where a {@link FootprintProjectSchema} is positioned on a specific
+ * parcel: the user-chosen (or default centroid) center, the rotation,
+ * and the computed footprint polygon at that position.
+ */
 export const FootprintPlacementSchema = z.object({
   center: z.object({
     lng: z.number().finite().gte(-180).lte(180),
@@ -156,11 +219,17 @@ export const FootprintPlacementSchema = z.object({
   geometry: PolygonSchema,
 })
 
-// ── Parcel snapshot captured at fit-session creation time ──────────────────
-// Snapshot rather than live-link so a saved fit-session keeps making sense
-// even if the upstream parcel record changes (owner sells, county refreshes
-// the dataset, etc).
+// ── Parcel snapshot ────────────────────────────────────────────────────────
+//
+// Snapshot rather than live-link so a saved fit session keeps making
+// sense even if the upstream parcel record changes (owner sells, county
+// refreshes the dataset, the parcel is renumbered, etc). Phase 6 will
+// add floodZone, meanSlopePct, edgeLabels here.
 
+/**
+ * The parcel state captured at fit-session creation time. Frozen at
+ * save time; we never re-fetch the parcel to "refresh" a session.
+ */
 export const ParcelFitSnapshotSchema = z.object({
   parcelKey: z.string().min(1).max(200),
   ownerName: z.string().max(500).nullable(),
@@ -173,8 +242,17 @@ export const ParcelFitSnapshotSchema = z.object({
   capturedAt: z.string(),
 })
 
-// ── Fit session (a footprint placed on a parcel with a fit result) ─────────
+// ── Fit session ────────────────────────────────────────────────────────────
 
+/**
+ * A single saved "this footprint, placed on this parcel, fits like this"
+ * record. References the footprint by id (a library item can be reused
+ * across many sessions) but snapshots the parcel state inline (parcel
+ * records can change upstream).
+ *
+ * Cascade: removing a footprint cascades to delete every session that
+ * referenced it (see `removeFootprint` in storage.ts).
+ */
 export const FitSessionSchema = z.object({
   id: z.string().min(1),
   parcelKey: z.string().min(1),
@@ -190,11 +268,19 @@ export const FitSessionSchema = z.object({
 
 // ── Top-level localStorage payload ─────────────────────────────────────────
 
-// Top-level array caps stop a hostile import from ballooning the store
-// into multi-GB territory and freezing the browser. 10k of each is
-// well past any real user's lifetime project count.
+/**
+ * Top-level array cap. Stops a hostile import from ballooning the store
+ * into multi-GB territory and freezing the browser. 10k of each is
+ * well past any real user's lifetime project count.
+ */
 const MAX_LIBRARY_ITEMS = 10_000
 
+/**
+ * The full persisted shape under `holston-scout/build-fit/v1` in
+ * localStorage. `schemaVersion` is a literal `1` — a breaking change to
+ * any field shape bumps the literal AND adds a `migrate()` branch in
+ * `storage.ts` so older payloads still read.
+ */
 export const BuildFitStoreSchema = z.object({
   schemaVersion: z.literal(1),
   footprints: z.array(FootprintProjectSchema).max(MAX_LIBRARY_ITEMS),

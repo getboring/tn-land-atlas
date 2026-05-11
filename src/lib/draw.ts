@@ -1,5 +1,20 @@
-// Terra Draw lifecycle helpers. Keeps ParcelMap.tsx free of the adapter
-// boilerplate so the component focuses on app behavior.
+// Terra Draw lifecycle helpers.
+//
+// Wraps the Terra Draw + MapLibre adapter boilerplate so ParcelMap.tsx
+// only deals with the high-level mode + completion callbacks. There is
+// exactly one TerraDraw instance per map; lasso (polygon) and ruler
+// (linestring) modes share it.
+//
+// Public surface:
+// - DrawMode                 'idle' | 'lasso' | 'ruler'
+// - DrawHandlers             callback bundle the host supplies once at create time
+// - createDraw(map, h)       returns a fully-wired TerraDraw
+// - setDrawMode(draw, mode)  switches the active mode; 'idle' also clears in-progress drawings
+// - lineDistanceMeters(line) sum of haversine segments along a multi-point line
+// - formatDistance(meters)   feet under 1 mile, miles with 2-decimal precision above
+//
+// Gotcha: setDrawMode('idle') CLEARS all drawings. If build-fit ever
+// needs a parallel draw instance, fork it; do not share this one.
 
 import type maplibregl from 'maplibre-gl'
 import {
@@ -9,13 +24,31 @@ import {
 } from 'terra-draw'
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter'
 
+/** The three states the Terra Draw instance can occupy. */
 export type DrawMode = 'idle' | 'lasso' | 'ruler'
 
+/**
+ * Completion callbacks for the two interactive modes. Both fire on
+ * `finish`; the caller decides what to do with the resulting geometry
+ * (lasso -> spatial query, ruler -> distance readout).
+ */
 export interface DrawHandlers {
+  /** Closed polygon ring as `[lng, lat][]`. First and last points are equal. */
   onPolygonComplete: (ring: [number, number][]) => void
+  /** Ordered `[lng, lat][]` line. At least two points. */
   onLineComplete: (line: [number, number][]) => void
 }
 
+/**
+ * Construct the single TerraDraw instance for the lifetime of a map.
+ *
+ * The handlers are wired once at construction. To change behavior later,
+ * recreate the instance instead of mutating callbacks; Terra Draw doesn't
+ * support handler replacement after `on('finish')`.
+ *
+ * Style colors mirror the brand selection language so the in-progress
+ * lasso reads as "this is selection-in-flight" without a legend.
+ */
 export function createDraw(map: maplibregl.Map, handlers: DrawHandlers): TerraDraw {
   const draw = new TerraDraw({
     adapter: new TerraDrawMapLibreGLAdapter({ map }),
@@ -61,6 +94,13 @@ export function createDraw(map: maplibregl.Map, handlers: DrawHandlers): TerraDr
   return draw
 }
 
+/**
+ * Switch the active Terra Draw mode.
+ *
+ * `'idle'` clears any in-progress drawings — both lasso and ruler share
+ * one instance, so leaving an in-progress polygon visible while the user
+ * starts the ruler would be confusing.
+ */
 export function setDrawMode(draw: TerraDraw, mode: DrawMode): void {
   if (mode === 'idle') {
     draw.setMode('static')
@@ -72,7 +112,7 @@ export function setDrawMode(draw: TerraDraw, mode: DrawMode): void {
   }
 }
 
-// Haversine distance between two [lng, lat] points, in meters.
+/** Haversine great-circle distance between two `[lng, lat]` points, in meters. */
 function haversineMeters(a: [number, number], b: [number, number]): number {
   const R = 6371000
   const toRad = (d: number) => (d * Math.PI) / 180
@@ -86,6 +126,10 @@ function haversineMeters(a: [number, number], b: [number, number]): number {
   return 2 * R * Math.asin(Math.sqrt(x))
 }
 
+/**
+ * Sum of consecutive haversine segments along a multi-point line.
+ * Returns 0 for a single-point or empty input.
+ */
 export function lineDistanceMeters(line: [number, number][]): number {
   let total = 0
   for (let i = 1; i < line.length; i++) {
@@ -97,6 +141,14 @@ export function lineDistanceMeters(line: [number, number][]): number {
 const FEET_PER_METER = 3.28084
 const FEET_PER_MILE = 5280
 
+/**
+ * Format a meter distance for the ruler readout.
+ *
+ * @example
+ * formatDistance(100)    // -> '328 ft'
+ * formatDistance(2000)   // -> '6,562 ft'
+ * formatDistance(3000)   // -> '1.86 mi'
+ */
 export function formatDistance(meters: number): string {
   const feet = meters * FEET_PER_METER
   if (feet < FEET_PER_MILE) return `${Math.round(feet).toLocaleString()} ft`

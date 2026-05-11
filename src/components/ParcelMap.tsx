@@ -1,3 +1,39 @@
+// ParcelMap: the entire interactive map surface.
+//
+// Lifetime: one instance per app session. Lazy-loaded by App.tsx so the
+// MapLibre + Terra Draw + Turf cost only ships when the user lands on
+// the map.
+//
+// Public surface (props): none. ParcelMap owns its own state.
+//
+// What this component does:
+// - Initializes one MapLibre Map and one Terra Draw instance.
+// - Owns view state, parcel selection, search results, recent parcels,
+//   saved parcels, the lasso / ruler tools, filter sheet state,
+//   permalink sync, layer-toggle state (basemap / contour), and the
+//   entry point into BuildFitWorkspace.
+// - Holds REST plumbing (queryParcelsByBbox, searchParcels,
+//   getParcelByKey, getPropertyData, queryParcelsInPolygon) via
+//   per-call AbortControllers so the latest fetch always wins.
+//
+// What lives elsewhere:
+// - All Pages Functions live in `functions/api/`.
+// - Pure indicator math (price/ac, holding tier, occupancy, ...) lives
+//   in `src/lib/insights.ts` with unit tests.
+// - The whole build-fit feature lives under `src/components/build-fit/`
+//   and `src/lib/build-fit/`. This file's job at the seam is just to
+//   mount BuildFitWorkspace and pass the selected parcel + map ref.
+//
+// Gotchas (documented elsewhere too, but call-out here):
+// - MapLibre overrides Tailwind `absolute`; the container uses inline
+//   `style={{ position: 'absolute', inset: 0 }}` so the inline style
+//   wins.
+// - Long-lived map handlers (load / moveend / click) read from refs
+//   (`loadRef.current`, `selectRef.current`, etc.) so they always see
+//   the latest callback closure.
+// - `window.__map__` is set for E2E tests only; do not read from app
+//   code.
+
 import React, { useEffect, useRef, useState, useCallback, lazy, Suspense } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'

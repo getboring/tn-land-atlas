@@ -1,14 +1,22 @@
+// Suspense fallback for the lazy-loaded ParcelMap chunk.
+//
+// The four-stage escalation matches the user's mental model of "what's
+// taking so long":
+//
+//   0..500ms     blank surface (no flicker on fast connections)
+//   500ms..3s    brand pulse + "Loading map..."
+//   3s..8s       "Preparing parcel data..." (suggests work, not failure)
+//   8s+          "Slow connection" copy + a manual reload button
+//
+// The reload button is the explicit escape hatch when chunked JS gets
+// wedged behind a flaky CDN.
+
 import { useState, useEffect } from 'react'
 import { SurveyCornerMark } from './SurveyCornerMark'
 
 /**
- * Graduated loading states that avoid flash on fast connections
- * and communicate progress on slow ones.
- *
- * 0–500ms:   empty (no flash)
- * 500ms–3s:  brand pulse + "Loading map…"
- * 3s–8s:     "Preparing parcel data…"
- * 8s+:       "Slow connection" + manual reload button
+ * Graduated loading shell used as the `<Suspense fallback>` for the
+ * lazy-loaded ParcelMap chunk. Self-contained: no props.
  */
 export function MapLoadingShell() {
   const [stage, setStage] = useState<0 | 1 | 2 | 3>(0)

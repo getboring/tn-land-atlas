@@ -1,3 +1,15 @@
+// Top chrome bar: brand mark + wordmark on the left, reserved slots in
+// the middle and on the right, and `children` (the map) below filling
+// the remaining viewport via flex-col.
+//
+// The chrome is one of three brand surfaces (chrome / SurveyCornerMark /
+// brand tokens in index.css). Updates to the brand should flow through
+// all three together — see CLAUDE.md "Brand system" for the contract.
+//
+// `centerSlot` / `rightSlot` are intentionally empty in production
+// today; they're the planned mount points for a future global search
+// input and authenticated-user menu.
+
 import type { ReactNode } from 'react'
 import { SurveyCornerMark } from './SurveyCornerMark'
 
@@ -9,6 +21,10 @@ interface HolstonChromeProps {
   children: ReactNode
 }
 
+/**
+ * Renders the persistent top chrome bar and lays out the rest of the
+ * viewport below it. Always mount this once at the App root.
+ */
 export function HolstonChrome({ centerSlot, rightSlot, children }: HolstonChromeProps) {
   return (
     <div className="h-dvh flex flex-col bg-surface">

@@ -1,5 +1,21 @@
+// Error boundary fallback for the map subtree.
+//
+// Wired in App.tsx via react-error-boundary. Catches any render-time
+// crash from ParcelMap and below (chunked load failures, MapLibre
+// init errors, network failures while constructing the initial state)
+// and renders a branded retry surface.
+//
+// We coerce `error` to a string defensively — react-error-boundary
+// types it as `unknown` so the typescript-eslint no-unsafe-* rules
+// don't fire on whatever the user-defined throw value was.
+
 import type { FallbackProps } from 'react-error-boundary'
 
+/**
+ * The error boundary's fallback UI. `resetErrorBoundary` re-attempts
+ * the boundary subtree; for chunked-load failures the consumer may
+ * want to call `window.location.reload()` instead of relying on retry.
+ */
 export function MapErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
   // react-error-boundary types `error` as `unknown` so it survives the
   // typescript-eslint `no-unsafe-*` lint rules. Coerce to a string here.
