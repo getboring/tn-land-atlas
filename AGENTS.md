@@ -361,6 +361,8 @@ curl -s -X POST -H 'content-type: application/json' \
 | Search is slow / unresponsive | Result count is > 200; refine query. Rule #15. |
 | Build green, prod broken | `tsconfig.json` lost the functions project ref. Rule #6. |
 | MapLibre 404s in console | A basemap source's listed maxzoom exceeds upstream coverage (USGS Topo caps at z16). Re-probe per AGENTS.md rule #7 covenant or a typo in the tile URL template. |
+| Social share preview is broken | The `og:image` in `index.html` is `og-image.svg`. Some platforms (older Facebook, some Slack tenants) don't render SVG OG cards. Swap to a 1200x630 PNG if it matters for a launch. |
+| JS-disabled visitors see blank page | `index.html` has a `<noscript>` fallback. Verify by viewing source on `view-source:https://tn-land-atlas.pages.dev/` and confirm the noscript block is present in the served HTML. |
 
 ## Convex / D1 / better-auth
 
