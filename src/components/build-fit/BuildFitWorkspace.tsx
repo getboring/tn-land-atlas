@@ -74,6 +74,7 @@ import {
   footprintLabels,
   setbackEnvelope,
   envelopeAreaSqft,
+  insetPolygonRing,
   parcelEdgeLineFeatures,
   parcelEdgeLabelFeatures,
 } from '@/lib/build-fit/geometry'
@@ -419,19 +420,114 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       }
       for (const w of envelope.warnings) warnings.push(w)
     } else if (setbackConfig.mode === 'manual') {
-      envelope = {
-        mode: 'manual',
-        geometry: null,
-        warnings: [
-          warn(
-            'warning',
-            'setback',
-            'manual-needs-edges',
-            'Manual setbacks need front / side / rear edge classification (Phase 6). Values are recorded but no envelope is drawn yet.',
-          ),
-        ],
+      // Phase 6c: per-edge inset wired to the 6b edge labels.
+      // Each edge gets the foot distance corresponding to its label:
+      //   front -> frontFt, side -> sideFt, rear -> rearFt, other -> 0.
+      // Unlabeled edges get 0 too — i.e. they're treated as "no zoning
+      // constraint on this side." We emit a warning when there are
+      // unlabeled edges so the user knows the envelope is incomplete.
+      const ring = norm.largest.coordinates[0]
+      const edgeCount = ring ? Math.max(0, ring.length - 1) : 0
+      if (edgeCount > 0 && ring) {
+        const labelByEdge = new Map<number, EdgeLabelKind>()
+        for (const e of edgeLabels) labelByEdge.set(e.edgeIndex, e.label)
+        const distances: number[] = []
+        let unlabeledCount = 0
+        let otherCount = 0
+        for (let i = 0; i < edgeCount; i++) {
+          const label = labelByEdge.get(i)
+          if (!label) {
+            unlabeledCount++
+            distances.push(0)
+          } else if (label === 'front') {
+            distances.push(setbackConfig.frontFt ?? 0)
+          } else if (label === 'side') {
+            distances.push(setbackConfig.sideFt ?? 0)
+          } else if (label === 'rear') {
+            distances.push(setbackConfig.rearFt ?? 0)
+          } else {
+            // 'other' — explicitly non-zoning. No setback applied.
+            otherCount++
+            distances.push(0)
+          }
+        }
+        const allZero = distances.every((d) => d === 0)
+        let envGeom: PolygonOrMulti | null = null
+        if (!allZero) {
+          const inset = insetPolygonRing(ring, distances)
+          if (inset && inset.length >= 4) {
+            envGeom = { type: 'Polygon', coordinates: [inset] }
+          }
+        }
+        const envWarnings: FitWarning[] = []
+        if (unlabeledCount > 0) {
+          envWarnings.push(
+            warn(
+              'warning',
+              'edges',
+              'unlabeled-edges',
+              `${unlabeledCount} of ${edgeCount} parcel edges are unlabeled and have no setback applied. Label all edges for a complete envelope.`,
+            ),
+          )
+        }
+        if (otherCount > 0) {
+          envWarnings.push(
+            warn(
+              'info',
+              'edges',
+              'other-edges-no-setback',
+              `${otherCount} edge(s) labeled "other" — no setback applied to them.`,
+            ),
+          )
+        }
+        if (envGeom) {
+          envelope = { mode: 'manual', geometry: envGeom, warnings: envWarnings }
+          fitsEnvelope = fitsWithinParcel(geom, envGeom)
+          envSqft = envelopeAreaSqft(envGeom)
+        } else if (allZero) {
+          envelope = {
+            mode: 'manual',
+            geometry: null,
+            warnings: [
+              warn(
+                'info',
+                'setback',
+                'manual-all-zero',
+                'Manual setbacks: every applied distance is 0 (no envelope to draw). Enter values and label edges.',
+              ),
+            ],
+          }
+        } else {
+          envelope = {
+            mode: 'manual',
+            geometry: null,
+            warnings: [
+              warn(
+                'warning',
+                'setback',
+                'envelope-collapsed',
+                'Manual setbacks leave no buildable area on this parcel (envelope collapsed).',
+              ),
+            ],
+          }
+          fitsEnvelope = false
+        }
+        for (const w of envelope.warnings) warnings.push(w)
+      } else {
+        envelope = {
+          mode: 'manual',
+          geometry: null,
+          warnings: [
+            warn(
+              'warning',
+              'geometry',
+              'parcel-no-exterior-ring',
+              'Parcel has no usable exterior ring; cannot compute manual envelope.',
+            ),
+          ],
+        }
+        for (const w of envelope.warnings) warnings.push(w)
       }
-      for (const w of envelope.warnings) warnings.push(w)
     }
 
     return {
@@ -450,7 +546,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       },
       subtitle: `${draftValues.widthFt} × ${draftValues.lengthFt} ft @ ${draftValues.rotationDeg}°`,
     }
-  }, [validated, draftValues, userCenter, setbackConfig])
+  }, [validated, draftValues, userCenter, setbackConfig, edgeLabels])
 
   // ── Push computed footprint + center handle to the map ──────────────────
   useEffect(() => {

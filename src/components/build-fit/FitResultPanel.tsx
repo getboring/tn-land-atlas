@@ -434,9 +434,10 @@ function SetbackBlock({
             className="w-full bg-white/5 border border-border-default text-text-primary text-base sm:text-sm px-3 py-1.5 rounded-md outline-none focus:border-brand placeholder:text-text-tertiary resize-none"
           />
           <div className="text-[10px] text-text-tertiary leading-snug">
-            Manual setbacks need front / side / rear edge classification to
-            draw an envelope. Values are recorded; the envelope draw arrives
-            with the Phase 6 true-envelope engine.
+            Manual setbacks apply per-edge: label each parcel edge as
+            front / side / rear (via the Edit-edges toggle in the top
+            bar) and the matching distance is used. Edges labeled "other"
+            or left unlabeled get no setback.
           </div>
         </div>
       )}
