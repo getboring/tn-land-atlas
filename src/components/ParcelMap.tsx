@@ -906,11 +906,29 @@ export default function ParcelMap() {
     }
   }
 
+  // Ref-tracked so an unmount during the flash window can clear the
+  // pending setState. Without this, a click + immediate navigation away
+  // would queue a setState on an unmounted component (React 19 ignores
+  // it but the wasted work + warning posture is avoidable).
+  const shareCopiedTimeoutRef = useRef<number | null>(null)
+  useEffect(() => {
+    return () => {
+      if (shareCopiedTimeoutRef.current != null) {
+        window.clearTimeout(shareCopiedTimeoutRef.current)
+      }
+    }
+  }, [])
   const sharePermalink = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(window.location.href)
       setShareCopied(true)
-      setTimeout(() => setShareCopied(false), 1800)
+      if (shareCopiedTimeoutRef.current != null) {
+        window.clearTimeout(shareCopiedTimeoutRef.current)
+      }
+      shareCopiedTimeoutRef.current = window.setTimeout(() => {
+        setShareCopied(false)
+        shareCopiedTimeoutRef.current = null
+      }, 1800)
     } catch (e) {
       console.error('[share] clipboard write failed', e)
       // Common when the page isn't focused (permission denied on the

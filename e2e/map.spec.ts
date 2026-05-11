@@ -388,6 +388,35 @@ test.describe('Holston Scout', () => {
       .toBe(0)
   })
 
+  test('Escape closes the fit workspace (keyboard accessibility)', async ({ page }) => {
+    // WCAG keyboard expectation: any dialog-style overlay must offer a
+    // single-key exit so keyboard-only users don't have to tab to the X
+    // button. Skips when focus is in an input so form editing isn't
+    // hijacked. We test the outside-input case here; the inside-input
+    // case is the React handler's `inField` guard and stays implementation-
+    // owned (tested via unit reasoning, not e2e).
+    await loadParcelsAt(page, -82.3534, 36.3134, 16)
+    await clickFirstParcel(page)
+    await page.getByRole('button', { name: /Test Building Fit/i }).click()
+    await expect(page.locator('[data-fit-workspace]')).toBeVisible({ timeout: 8000 })
+
+    // Move focus off any input so the handler fires. Escape on a focused
+    // input means "abort editing" and is correctly suppressed by the
+    // handler's inField guard; we want the outside-input branch here.
+    // The workspace itself has pointer-events-none so we can't click it
+    // to blur; use document.activeElement.blur() instead.
+    await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null
+      el?.blur?.()
+    })
+    await page.keyboard.press('Escape')
+
+    await expect(page.locator('[data-fit-workspace]')).toHaveCount(0)
+    // Detail panel returns to confirm the exit path went through onClose
+    // (not just hidden the workspace via local state).
+    await expect(page.getByText('Property Details')).toBeVisible({ timeout: 4000 })
+  })
+
   test('clearing the parcel after fit mode also clears fit layers and selection', async ({ page }) => {
     // Real user flow: open a parcel, open fit mode, exit fit (which
     // restores the detail panel), then close the detail panel via its X.
