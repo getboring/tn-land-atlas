@@ -9,7 +9,7 @@ not state-locked. Switchable basemaps (Satellite / Streets /
 Topographic / Hybrid), slate parcel boundaries, amber hover and
 selection states with corner-node markers (the Survey Corner brand
 mark in miniature), owner / address / parcel-ID search with type-ahead
-from recent visits, elevation contour overlay, lasso + ruler tools,
+from recent visits, elevation contour + hillshade overlays, ruler distance tool,
 computed insight badges, save / recent parcels (localStorage),
 server-side enriched property data (buildings, valuations, sales
 history, linked entities), URL permalinks, PDF/PNG export, and an
@@ -25,13 +25,13 @@ Live: <https://tn-land-atlas.pages.dev>
 
 - Vite 8 + React 19 + TypeScript strict (project refs for app / node / functions)
 - MapLibre GL JS 5
-- maplibre-contour, terra-draw, @watergis/maplibre-gl-export
+- maplibre-contour (elevation tiles for contours + hillshade), terra-draw (ruler)
 - Tailwind CSS v4 with `@theme` tokens (HolstonBuilder family — Inter throughout, system monospace stack for data; palette: `bg #02040A`, `surface #0F1729`, `brand #F59E0B`, `text-primary #F8FAFC`)
 - ArcGIS REST (Johnson City) for live parcel polygons
 - Supabase REST for enriched data — server-side only via Pages Functions
 - Cloudflare Pages + Pages Functions
-- Playwright for E2E (37 tests across 3 viewports, ~109 effective runs after one mobile-only skip), Vitest for unit tests across
-  `src/lib/{insights,permalink,lazyRetry}.ts` and the full `src/lib/build-fit/` suite (243 cases)
+- Playwright for E2E (38 tests across 3 viewports, ~112 effective runs after one mobile-only skip), Vitest for unit tests across
+  `src/lib/{insights,permalink,lazyRetry}.ts` and the full `src/lib/build-fit/` suite (326 cases)
 
 ## Quick start
 
@@ -62,14 +62,15 @@ Universal across desktop / tablet / mobile. Five buttons, all >= 56px tall
 (WCAG 2.5.5 AAA, iOS HIG, Material 3):
 
 - **Layers** — opens a popover with the basemap chooser (Satellite /
-  Streets / Topographic / Hybrid) and the **Contour lines** overlay
+  Streets / Topographic / Hybrid), the **Contour lines** overlay
   toggle (50 ft minor / 200 ft major at z13, finer at z14+; public
-  Mapzen Terrarium DEM). Adding a new source must clear AGENTS.md
-  rule #7 (bounds, CSP, attribution, zoom probe).
-- **Tools** — opens a popover with **Lasso** (draw a polygon, find
-  every parcel inside) and **Ruler** (haversine distance in feet/miles).
-  While a draw mode is active, the parent button echoes the active
-  mode in its icon and label.
+  Mapzen Terrarium DEM), and the **Hillshade** overlay toggle
+  (native MapLibre hillshade rendering off the same DEM source).
+  Adding a new source must clear AGENTS.md rule #7 (bounds, CSP,
+  attribution, zoom probe).
+- **Ruler** — toggle on the action bar (no popover). Click on the map
+  to drop points; double-click to finish. Reports haversine distance
+  in feet under a mile, miles otherwise.
 - **Filter** — opens a native `<dialog>` with the computed-insight
   filters. Active count appears in the button label.
 - **Locate** — triggers the GeolocateControl (caps zoom at 17 so users
@@ -164,7 +165,7 @@ load the latest hashed bundle.
 ## Testing
 
 ```bash
-npm test                                                  # vitest, 243 cases (insights, permalink, lazyRetry, build-fit)
+npm test                                                  # vitest, 326 cases (insights, permalink, lazyRetry, build-fit)
 npm run lint                                              # eslint
 npm run build                                             # tsc -b + vite build
 npm run test:e2e                                          # Playwright via 'wrangler pages dev' locally
@@ -222,7 +223,7 @@ src/
     arcgis.ts           ParcelProperties / ParcelFeature / ParcelCollection types
     draw.ts             Terra Draw lifecycle helpers + haversine ruler
     insights.ts         pure indicator functions (price/ac, holding-yrs, entity, ...)
-    insights.test.ts    vitest cases for the parcel-side helpers (243 total across all suites)
+    insights.test.ts    vitest cases for the parcel-side helpers (326 total across all suites)
     lazyRetry.ts        dynamic-import wrapper with one-shot reload (stale-chunk recovery)
     permalink.ts        URL <-> { view, parcelKey } (replaceState only)
     supabase-queries.ts enriched-data type definitions (no runtime client)

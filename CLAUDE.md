@@ -10,13 +10,13 @@ the user-facing brand is **Holston Scout**.)
 ## Stack
 - Vite 8 + React 19 + TypeScript strict (project refs for app / node / functions)
 - MapLibre GL JS 5
-- maplibre-contour (elevation), terra-draw (lasso/ruler), @watergis/maplibre-gl-export (PDF/PNG)
+- maplibre-contour (elevation tiles backing contours + native MapLibre hillshade), terra-draw (ruler-only since Phase 6 polish)
 - Tailwind CSS v4 + shadcn-style primitives (Button, Card)
 - ArcGIS REST (Johnson City) for live parcel polygons
 - Supabase REST for enriched data — server-side only via Pages Functions
 - Cloudflare Pages + Pages Functions
-- Playwright E2E: 37 tests across 3 viewports (chromium-desktop / chromium-tablet / chromium-mobile), one mobile-only skip on the other two -> ~109 effective runs
-- Vitest: 243 cases across `src/lib/{insights,permalink,lazyRetry}.ts` and the `src/lib/build-fit/` suite (`schemas`, `storage`, `geometry`, `map-layers`, `project-file`, `report`)
+- Playwright E2E: 38 tests across 3 viewports (chromium-desktop / chromium-tablet / chromium-mobile), one mobile-only skip on the other two -> ~112 effective runs
+- Vitest: 326 cases across `src/lib/{insights,permalink,lazyRetry}.ts` and the `src/lib/build-fit/` suite (`schemas`, `storage`, `geometry`, `map-layers`, `project-file`, `report`)
 
 ## Live
 - Prod: https://tn-land-atlas.pages.dev
@@ -54,7 +54,7 @@ src/
     HolstonChrome.tsx        top chrome — wordmark + Survey Corner mark + slots
     SurveyCornerMark.tsx     geometric brand mark, three lockups
     ParcelMap.tsx            main map, search, detail panel, bottom action bar,
-                             Tools popover, FilterSheet, ParcelInsights;
+                             Ruler toggle, FilterSheet, ParcelInsights;
                              gates the Test Building Fit CTA
     MapLoadingShell.tsx      graduated 4-stage loading shell
     MapErrorFallback.tsx     branded error UI (used by react-error-boundary)
@@ -107,7 +107,7 @@ functions/api/
   parcel.ts                  GET  -> single feature by GISLINK (permalink resolver)
   search.ts                  POST -> ArcGIS LIKE on OWNER / ADDRESS / GISLINK
   property.ts                POST -> Supabase parallel reads (UUID-validated joins)
-e2e/map.spec.ts              37 tests across 3 viewports (1 mobile-only skip on
+e2e/map.spec.ts              38 tests across 3 viewports (1 mobile-only skip on
                              the other two) -> 109 effective runs
 ```
 
@@ -159,17 +159,36 @@ iOS home indicator.
 Tapping Layers opens a popover above the bar. Top half is the basemap
 chooser (4 radio-style pills: Satellite / Streets / Topographic /
 Hybrid). Bottom half is overlays — currently Contour lines as a switch
-(role=switch, aria-checked). Mutually exclusive with the Tools popover
-so they don't fight over the same vertical slot. Visibility is toggled
+(role=switch, aria-checked). Visibility is toggled
 via `setLayoutProperty('id', 'visibility', …)`, never `setStyle()` —
 see AGENTS.md rule #7 for the four-check covenant for adding a new
 basemap or overlay source.
 
-### Tools popover
-Tapping Tools opens an inline popover above the bar with Lasso (polygon),
-Ruler (line), and a Cancel button (only when there's something to cancel).
-While a draw mode is active, the parent Tools button echoes the active
-mode in its icon + label (Lasso / Ruler) and stays in pressed state.
+### Print model
+
+Two surfaces, one mental model: `window.print()` + `@media print`
+CSS. No external dependency. Both targets opt into the print stylesheet
+via `[data-print-target]`:
+
+- **Parcel detail panel** — Print button next to Save and Share on the
+  detail panel header. Strips the chrome + map and prints the panel as
+  a one-page handout. Pre-existing CSS rule, button added in the Phase 6
+  polish pass so the print path was finally discoverable.
+- **Build-fit FitReport** — Phase 5 SVG-diagram report, triggered by
+  the Print button in `FitResultPanel` while fit mode is open.
+
+The `@watergis/maplibre-gl-export` library (printer icon next to the
+MapLibre native cluster) was removed in Phase 6 polish — duplicated
+work, ~100 kB gzip, and never actually used by the live-map snapshot
+path.
+### Ruler (top-level action-bar button)
+
+The Ruler is a single direct toggle on the bottom action bar (no
+Tools popover; the lasso was retired in the Phase 6 polish pass).
+Click to enter linestring mode; click points on the map to drop
+vertices; double-click to finish and read the haversine distance
+in feet/miles. Re-clicking the button while active toggles back to
+idle. Terra Draw is still the engine; lasso polygon mode is gone.
 
 ### Filter sheet
 Native HTMLDialogElement (`showModal()`) gives focus trap, Escape-to-
