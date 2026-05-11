@@ -1904,14 +1904,9 @@ function ParcelActions({
           {copiedAddr ? 'Copied' : 'Copy address'}
         </button>
       )}
-      <button
-        type="button"
-        onClick={() => window.print()}
-        aria-label="Print this parcel"
-        className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg text-[11px] font-medium bg-white/5 text-text-primary border border-border-default hover:bg-white/10 print:hidden"
-      >
-        <Printer className="w-3.5 h-3.5" /> Print
-      </button>
+      {/* Print lives in the panel header (icon-only, next to Save / Share /
+          Close). The Phase 6 polish pass consolidated to a single Print
+          path — this chip used to duplicate it. */}
       {ownerForSearch && (
         <button
           type="button"
