@@ -11,6 +11,7 @@ import {
   footprintLabels,
   setbackEnvelope,
   envelopeAreaSqft,
+  insetPolygonRing,
   FEET_PER_METER,
   SQM_TO_SQFT,
 } from './geometry'
@@ -403,5 +404,188 @@ describe('defaultFootprintCenter', () => {
     expect(c).not.toBeNull()
     expect(c![0]).toBeCloseTo(TN_CENTER[0], 4)
     expect(c![1]).toBeCloseTo(TN_CENTER[1], 4)
+  })
+})
+
+// ── Phase 6a: straight-line inset (insetPolygonRing) ───────────────────────
+//
+// Each test pins a numeric property of the inset polygon (vertex count,
+// area, distance from boundary) so a refactor of the math has hard
+// regression signal.
+
+describe('insetPolygonRing', () => {
+  // A clean ~10m x 10m square in lng/lat near TN_CENTER. At lat ~36°,
+  // 1 meter ≈ 1.108e-5° lng and 8.983e-6° lat.
+  function metersToLngLatSquare(sideMeters: number): number[][] {
+    const lng = TN_CENTER[0]
+    const lat = TN_CENTER[1]
+    const half = sideMeters / 2
+    const dLat = half / 111_320
+    const dLng = half / (111_320 * Math.cos((lat * Math.PI) / 180))
+    return [
+      [lng - dLng, lat - dLat],
+      [lng + dLng, lat - dLat],
+      [lng + dLng, lat + dLat],
+      [lng - dLng, lat + dLat],
+      [lng - dLng, lat - dLat],
+    ]
+  }
+
+  it('returns null on a < 4-vertex ring (no closing duplicate)', () => {
+    expect(
+      insetPolygonRing(
+        [
+          [-82.35, 36.31],
+          [-82.34, 36.31],
+          [-82.34, 36.32],
+        ],
+        5,
+      ),
+    ).toBeNull()
+  })
+
+  it('returns null on zero or negative uniform distance (no-op)', () => {
+    const square = metersToLngLatSquare(40)
+    // 0 -> all distances are zero -> null (no real inset).
+    expect(insetPolygonRing(square, 0)).toBeNull()
+    expect(insetPolygonRing(square, -5)).toBeNull()
+    expect(insetPolygonRing(square, Number.NaN)).toBeNull()
+  })
+
+  it('inset of a 10 m square by 1 ft (~0.305 m) leaves a smaller square', () => {
+    // Square is 10 m on a side. 1 ft inset removes a 0.305 m strip from
+    // each side: side becomes 10 - 2*0.305 = 9.39 m, area becomes ~88.2 m².
+    const ring = metersToLngLatSquare(10)
+    const inset = insetPolygonRing(ring, 1)
+    expect(inset).not.toBeNull()
+    if (!inset) return
+    // Closed ring => 5 vertices (4 corners + closing copy).
+    expect(inset).toHaveLength(5)
+    // The inset rectangle should still be a rectangle: top-left x ≈
+    // bottom-left x; top-right x ≈ bottom-right x. Just sanity-check that
+    // each axis shrank toward the centroid.
+    const lngs = inset.slice(0, 4).map((p) => p[0] ?? 0).sort((a, b) => a - b)
+    const lats = inset.slice(0, 4).map((p) => p[1] ?? 0).sort((a, b) => a - b)
+    const original = ring.slice(0, 4)
+    const origLngs = original.map((p) => p[0] ?? 0).sort((a, b) => a - b)
+    const origLats = original.map((p) => p[1] ?? 0).sort((a, b) => a - b)
+    // Min/max should have moved INWARD by some positive amount.
+    expect(lngs[0]!).toBeGreaterThan(origLngs[0]!)
+    expect(lngs[3]!).toBeLessThan(origLngs[3]!)
+    expect(lats[0]!).toBeGreaterThan(origLats[0]!)
+    expect(lats[3]!).toBeLessThan(origLats[3]!)
+  })
+
+  it('inset area matches the expected analytic shrink for a square', () => {
+    // 30 m square inset by 1 m -> 28 m square, area 784 m² = 8438 sqft.
+    // 1 m ≈ 3.2808 ft, so the inset distance argument is 1 / FEET_PER_METER
+    // in ft. The math: original 30² = 900 m² → 784 m². Convert to sqft.
+    const ring = metersToLngLatSquare(30)
+    const oneMeterInFt = 1 / 0.3048 // ≈ 3.2808
+    const inset = insetPolygonRing(ring, oneMeterInFt)
+    expect(inset).not.toBeNull()
+    if (!inset) return
+    const insetArea =
+      // Use Turf via parcelAreaSqft for consistency with the rest of the suite.
+      parcelAreaSqft({ type: 'Polygon', coordinates: [inset] })
+    // Expected area: 784 m² × SQM_TO_SQFT ≈ 8438 sqft. Tolerance 5% for the
+    // equirectangular approximation at TN latitudes.
+    const expected = 784 * SQM_TO_SQFT
+    expect(insetArea).toBeGreaterThan(expected * 0.95)
+    expect(insetArea).toBeLessThan(expected * 1.05)
+  })
+
+  it('inset collapses to null when distance exceeds half the parcel width', () => {
+    const ring = metersToLngLatSquare(10)
+    // 50 ft ≈ 15.2 m. Half the parcel is 5 m. The polygon should collapse.
+    expect(insetPolygonRing(ring, 50)).toBeNull()
+  })
+
+  it('handles CW (negative-area) rings by reversing internally', () => {
+    // Same square but in CW order. The inset should still produce a valid
+    // inward result (the routine detects orientation via signed area).
+    const ccw = metersToLngLatSquare(10)
+    const cw = ccw.slice(0, 4).reverse().concat([ccw[0]!])
+    const insetCCW = insetPolygonRing(ccw, 1)
+    const insetCW = insetPolygonRing(cw, 1)
+    expect(insetCCW).not.toBeNull()
+    expect(insetCW).not.toBeNull()
+    if (!insetCCW || !insetCW) return
+    // Area should be the same regardless of input orientation.
+    const aCCW = parcelAreaSqft({ type: 'Polygon', coordinates: [insetCCW] })
+    const aCW = parcelAreaSqft({ type: 'Polygon', coordinates: [insetCW] })
+    expect(aCW).toBeCloseTo(aCCW, 2)
+  })
+
+  it('accepts a per-edge distance array (Phase 6c will use this)', () => {
+    // 20 m square, four distances. With all 4 set to the same value we
+    // get the same result as the uniform-number path.
+    const ring = metersToLngLatSquare(20)
+    const insetUniform = insetPolygonRing(ring, 1.5)
+    const insetArray = insetPolygonRing(ring, [1.5, 1.5, 1.5, 1.5])
+    expect(insetUniform).not.toBeNull()
+    expect(insetArray).not.toBeNull()
+    if (!insetUniform || !insetArray) return
+    const aU = parcelAreaSqft({ type: 'Polygon', coordinates: [insetUniform] })
+    const aA = parcelAreaSqft({ type: 'Polygon', coordinates: [insetArray] })
+    expect(aA).toBeCloseTo(aU, 1)
+  })
+
+  it('rejects a per-edge array with the wrong length', () => {
+    const ring = metersToLngLatSquare(10)
+    // 4 edges, 3 distances -> null.
+    expect(insetPolygonRing(ring, [1, 1, 1])).toBeNull()
+  })
+
+  it('rejects per-edge negative or non-finite distances', () => {
+    const ring = metersToLngLatSquare(10)
+    expect(insetPolygonRing(ring, [1, -1, 1, 1])).toBeNull()
+    expect(insetPolygonRing(ring, [1, Number.NaN, 1, 1])).toBeNull()
+  })
+
+  it('produces sharp corners (no Turf-buffer rounding)', () => {
+    // Sharp-corner property: a 4-vertex input produces a 4-vertex output
+    // (closing duplicate excluded). Turf buffer rounding would yield
+    // many vertices along each corner arc.
+    const ring = metersToLngLatSquare(20)
+    const inset = insetPolygonRing(ring, 2)
+    expect(inset).not.toBeNull()
+    if (!inset) return
+    // 4 corners + 1 closing duplicate.
+    expect(inset).toHaveLength(5)
+  })
+})
+
+describe('setbackEnvelope (Phase 6a path)', () => {
+  it('returns a Polygon for a simple parcel', () => {
+    const parcel = smallParcel()
+    const env = setbackEnvelope(parcel, 10)
+    expect(env).not.toBeNull()
+    expect(env?.type).toBe('Polygon')
+  })
+
+  it('drops parts that collapse during MultiPolygon inset', () => {
+    // Two parts, one big, one tiny. Tiny part should collapse and the
+    // result should be Polygon (single part) not MultiPolygon.
+    const big = smallParcel().coordinates
+    // 5 m x 5 m square is too small to survive a 25 ft (~7.6 m) inset.
+    const lng = TN_CENTER[0] + 0.05
+    const lat = TN_CENTER[1]
+    const halfM = 2.5
+    const dLat = halfM / 111_320
+    const dLng = halfM / (111_320 * Math.cos((lat * Math.PI) / 180))
+    const tiny: number[][][] = [
+      [
+        [lng - dLng, lat - dLat],
+        [lng + dLng, lat - dLat],
+        [lng + dLng, lat + dLat],
+        [lng - dLng, lat + dLat],
+        [lng - dLng, lat - dLat],
+      ],
+    ]
+    const multi = { type: 'MultiPolygon' as const, coordinates: [big, tiny] }
+    const env = setbackEnvelope(multi, 25)
+    expect(env).not.toBeNull()
+    expect(env?.type).toBe('Polygon') // tiny part dropped
   })
 })

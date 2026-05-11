@@ -17,12 +17,10 @@ import area from '@turf/area'
 import destination from '@turf/destination'
 import {
   polygon as turfPolygon,
-  multiPolygon as turfMultiPolygon,
   point as turfPoint,
   lineString as turfLineString,
 } from '@turf/helpers'
 import booleanWithin from '@turf/boolean-within'
-import buffer from '@turf/buffer'
 import pointToLineDistance from '@turf/point-to-line-distance'
 import { centroid as parcelCentroid } from '@/lib/insights'
 import type { Polygon, PolygonOrMulti } from './schemas'
@@ -307,55 +305,237 @@ function formatSqft(n: number): string {
   return Math.round(n).toLocaleString()
 }
 
-// ── Setback envelope (uniform, planning-only) ──────────────────────────────
-// Inward offset of a parcel by `setbackFt` feet using Turf's geodesic buffer
-// (negative distance). This is a PLANNING ESTIMATE only: Turf buffer
-// rounds inset corners and is uniform on every edge regardless of front
-// / side / rear classification. True buildable envelopes need straight-
-// line half-plane clipping + zoning edge analysis (Phase 6).
+// ── Setback envelope: true straight-line inset (Phase 6a) ─────────────────
+// Inward offset of a parcel by setback distance(s) using half-plane
+// clipping. Sharp corners survive (no Turf-buffer rounding); uniform and
+// per-edge distances both supported.
 //
-// Returns:
-//   null         the setback is zero or negative, or the envelope
-//                degenerated (e.g. setback > half the parcel's narrowest
-//                dimension and the buffer collapses to nothing).
-//   Polygon      the inset envelope.
-//   MultiPolygon if a Polygon parcel split into multiple parts during
-//                the inset (rare but possible for waisted/L-shaped lots).
+// Algorithm:
+//   1. Project the parcel ring to local meters via an equirectangular
+//      tangent plane at the parcel centroid. Sub-foot error at TN
+//      latitudes for typical parcel scale, geodesic-quality for buildable
+//      envelopes is overkill and adds bundle cost we don't need.
+//   2. Detect ring orientation via signed area. Normalize to CCW for the
+//      rest of the math.
+//   3. For each edge, compute the inward unit normal and translate the
+//      edge inward by its setback distance. The result is one offset line
+//      per edge.
+//   4. Successively clip the original polygon against each offset line
+//      using Sutherland-Hodgman half-plane clipping. Each clip retains
+//      vertices on the inward side of that line and inserts the
+//      line-segment intersection where the polygon edge crosses the
+//      offset line.
+//   5. Project the clipped polygon back to lng/lat.
+//
+// Returns null when the resulting polygon has fewer than 3 distinct
+// vertices (envelope collapsed) or when the input is degenerate.
+//
+// `distancesFt` accepts either a single number (uniform setback, used by
+// the 'uniform' SetbackConfig mode) or an array of length equal to the
+// number of edges (used by Phase 6c's per-edge mode).
 
+/**
+ * Inset a single Polygon ring by either a uniform distance or per-edge
+ * distances. Returns null when the envelope collapses to < 3 vertices.
+ *
+ * @param ring Closed exterior ring as `[lng, lat][]` with first === last.
+ * @param distancesFt Either a single foot distance applied to every edge
+ *   or an array of foot distances, one per edge (in ring vertex order,
+ *   edge i runs from vertex i to vertex i+1).
+ */
+export function insetPolygonRing(
+  ring: number[][],
+  distancesFt: number | number[],
+): number[][] | null {
+  if (ring.length < 4) return null
+  // Drop the closing duplicate vertex for processing.
+  const open = ring.slice(0, ring.length - 1)
+  const n = open.length
+  if (n < 3) return null
+
+  // Per-edge distance array. Edge i runs from open[i] to open[(i+1)%n].
+  const distancesM: number[] = []
+  if (typeof distancesFt === 'number') {
+    for (let i = 0; i < n; i++) distancesM.push(distancesFt * METERS_PER_FOOT)
+  } else {
+    if (distancesFt.length !== n) return null
+    for (const d of distancesFt) distancesM.push(d * METERS_PER_FOOT)
+  }
+  if (distancesM.some((d) => !Number.isFinite(d) || d < 0)) return null
+  // All-zero distances would no-op; the caller's contract is "give me an
+  // inset polygon," so refuse to dress that up as success.
+  if (distancesM.every((d) => d === 0)) return null
+
+  // 1. Local equirectangular projection at the ring's centroid.
+  const refLat = open.reduce((s, p) => s + (p[1] ?? 0), 0) / n
+  const refLng = open.reduce((s, p) => s + (p[0] ?? 0), 0) / n
+  const cosLat = Math.cos((refLat * Math.PI) / 180)
+  const M_PER_DEG = 111_320 // average meters per degree on a sphere
+  const toM = (lng: number, lat: number): [number, number] => [
+    (lng - refLng) * M_PER_DEG * cosLat,
+    (lat - refLat) * M_PER_DEG,
+  ]
+  const toLngLat = (x: number, y: number): [number, number] => [
+    refLng + x / (M_PER_DEG * cosLat),
+    refLat + y / M_PER_DEG,
+  ]
+  const ringM: [number, number][] = open.map((p) => {
+    const lng = p[0] ?? 0
+    const lat = p[1] ?? 0
+    return toM(lng, lat)
+  })
+
+  // 2. Orientation. Signed area > 0 means CCW (in standard math coords
+  // where y goes up). Our local projection has y = north = up, so the
+  // standard shoelace formula applies. If CW, reverse so the rest of the
+  // math can assume CCW (inward normal = rotate edge direction +90 deg).
+  let signedArea = 0
+  for (let i = 0; i < n; i++) {
+    const a = ringM[i]
+    const b = ringM[(i + 1) % n]
+    if (!a || !b) continue
+    signedArea += a[0] * b[1] - b[0] * a[1]
+  }
+  signedArea *= 0.5
+  if (signedArea === 0) return null
+  let workingRing: [number, number][]
+  let workingDistances: number[]
+  if (signedArea < 0) {
+    // Reverse to CCW. Also reverse the per-edge distances so edge i in
+    // the original ring still maps to its intended distance.
+    workingRing = ringM.slice().reverse()
+    workingDistances = distancesM.slice().reverse()
+    // After reversing the vertex list, edge i runs from
+    // reversed[i] -> reversed[i+1]. In the original (CW) ring, this is
+    // the reverse of the original edge (n-1-i). So distance for new edge
+    // i should be the original distance for edge (n-1-i)... which is what
+    // distancesM.reverse() produces. Confirmed.
+  } else {
+    workingRing = ringM
+    workingDistances = distancesM
+  }
+
+  // 3 + 4. Build the clipping lines (one per edge) and successively clip
+  // the polygon against each. Sutherland-Hodgman half-plane clipping is
+  // robust here because each clip line is an oriented line; "inside" is
+  // the half-plane on the inward (left of edge direction) side.
+  let polygon: [number, number][] = workingRing.slice()
+  for (let i = 0; i < n; i++) {
+    const a = workingRing[i]
+    const b = workingRing[(i + 1) % n]
+    const d = workingDistances[i] ?? 0
+    if (!a || !b) continue
+    // Edge direction (unit vector).
+    const ex = b[0] - a[0]
+    const ey = b[1] - a[1]
+    const len = Math.hypot(ex, ey)
+    if (len === 0) continue
+    const ux = ex / len
+    const uy = ey / len
+    // Inward normal (perpendicular to edge, rotated +90 in CCW polygon).
+    const nx = -uy
+    const ny = ux
+    // Offset line: passes through (a + n*d), oriented along edge direction.
+    const ox = a[0] + nx * d
+    const oy = a[1] + ny * d
+    // Half-plane test: a point p is "inside" (kept) when dot(p - o, n) >= 0.
+    polygon = sutherlandHodgmanClipHalfPlane(polygon, [ox, oy], [nx, ny])
+    if (polygon.length < 3) return null
+  }
+
+  // 5. Project back to lng/lat and close the ring.
+  const lngLatRing: number[][] = polygon.map((p) => toLngLat(p[0], p[1]))
+  if (lngLatRing.length < 3) return null
+  // Close the ring.
+  const first = lngLatRing[0]
+  if (first) lngLatRing.push([first[0] ?? 0, first[1] ?? 0])
+  return lngLatRing
+}
+
+/**
+ * Clip a polygon (open vertex list, in CCW order in local meters) against
+ * a half-plane defined by a point on the boundary line and an inward
+ * normal. Returns the clipped polygon as a new open vertex list.
+ *
+ * Sutherland-Hodgman per-edge clip. Inside test: dot(p - origin, normal) >= 0.
+ */
+function sutherlandHodgmanClipHalfPlane(
+  polygon: [number, number][],
+  origin: [number, number],
+  normal: [number, number],
+): [number, number][] {
+  if (polygon.length === 0) return []
+  const out: [number, number][] = []
+  const isInside = (p: [number, number]): boolean =>
+    (p[0] - origin[0]) * normal[0] + (p[1] - origin[1]) * normal[1] >= 0
+
+  // Intersection of segment p1-p2 with the clip line (p - origin) . normal = 0.
+  // Parameter t along p1 + t*(p2 - p1). Solve:
+  //   ((p1 + t*(p2-p1)) - origin) . normal = 0
+  //   t = ((origin - p1) . normal) / ((p2 - p1) . normal)
+  const intersect = (
+    p1: [number, number],
+    p2: [number, number],
+  ): [number, number] => {
+    const dx = p2[0] - p1[0]
+    const dy = p2[1] - p1[1]
+    const denom = dx * normal[0] + dy * normal[1]
+    if (denom === 0) return p1 // parallel; should not happen if we got here
+    const t = ((origin[0] - p1[0]) * normal[0] + (origin[1] - p1[1]) * normal[1]) / denom
+    return [p1[0] + t * dx, p1[1] + t * dy]
+  }
+
+  for (let i = 0; i < polygon.length; i++) {
+    const current = polygon[i]
+    const prev = polygon[(i - 1 + polygon.length) % polygon.length]
+    if (!current || !prev) continue
+    const currentIn = isInside(current)
+    const prevIn = isInside(prev)
+    if (currentIn) {
+      if (!prevIn) out.push(intersect(prev, current))
+      out.push(current)
+    } else if (prevIn) {
+      out.push(intersect(prev, current))
+    }
+  }
+  return out
+}
+
+/**
+ * Compute the buildable envelope for a parcel under a given setback.
+ *
+ * Pre-Phase-6 used Turf's geodesic buffer (negative distance) which
+ * rounded inset corners. Phase 6a uses straight-line half-plane clipping
+ * (`insetPolygonRing`) which preserves sharp corners. For MultiPolygon
+ * parcels we inset each part independently.
+ *
+ * @param parcel The parcel polygon to inset.
+ * @param setbackFt Uniform setback in feet. Phase 6c will add a per-edge
+ *   variant via {@link insetPolygonRing} directly.
+ * @returns Polygon (one inset part) or MultiPolygon (multiple inset parts)
+ *   or null when the inset collapses to nothing.
+ */
 export function setbackEnvelope(
   parcel: PolygonOrMulti,
   setbackFt: number,
 ): PolygonOrMulti | null {
   if (!Number.isFinite(setbackFt) || setbackFt <= 0) return null
-  const setbackKm = (setbackFt * METERS_PER_FOOT) / 1000
-  const input =
-    parcel.type === 'Polygon'
-      ? turfPolygon(parcel.coordinates)
-      : turfMultiPolygon(parcel.coordinates)
-  try {
-    const result = buffer(input, -setbackKm, { units: 'kilometers' })
-    if (!result || !result.geometry) return null
-    const g = result.geometry
-    if (g.type === 'Polygon') {
-      // Reject degenerate rings (Turf can produce <4-coord rings on
-      // near-collapse cases that downstream Turf calls then crash on).
-      const ring = g.coordinates[0]
-      if (!ring || ring.length < 4) return null
-      return { type: 'Polygon', coordinates: g.coordinates as number[][][] }
-    }
-    if (g.type === 'MultiPolygon') {
-      const parts = (g.coordinates as number[][][][]).filter(
-        (part) => part[0] && part[0].length >= 4,
-      )
-      if (parts.length === 0) return null
-      return { type: 'MultiPolygon', coordinates: parts }
-    }
-    return null
-  } catch {
-    // Turf throws on truly degenerate inputs (zero-area parcel, ring with
-    // <3 distinct vertices). Treat as 'no envelope.'
-    return null
+  const parts = parcel.type === 'Polygon' ? [parcel.coordinates] : parcel.coordinates
+  const resultParts: number[][][][] = []
+  for (const partRings of parts) {
+    const exterior = partRings[0]
+    if (!exterior || exterior.length < 4) continue
+    const inset = insetPolygonRing(exterior, setbackFt)
+    if (!inset || inset.length < 4) continue
+    resultParts.push([inset])
   }
+  if (resultParts.length === 0) return null
+  if (resultParts.length === 1) {
+    const single = resultParts[0]
+    if (!single) return null
+    return { type: 'Polygon', coordinates: single }
+  }
+  return { type: 'MultiPolygon', coordinates: resultParts }
 }
 
 /** Envelope area in sqft, summing every part. */
