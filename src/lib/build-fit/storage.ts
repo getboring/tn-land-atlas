@@ -30,7 +30,21 @@ import {
 const STORAGE_KEY = 'holston-scout/build-fit/v1'
 const EVENT_NAME = 'holston-scout:build-fit-storage'
 
-type StorageWriteResult =
+/**
+ * Result type for every storage write API in this module.
+ *
+ * - `{ ok: true, store }` carries the new store snapshot the write
+ *   produced. Callers that need to operate on the post-write state
+ *   (e.g. select-newly-created-item) read it here.
+ * - `{ ok: false, reason: 'validation' }` means the payload failed
+ *   `safeParse`. The caller passed something that won't load back from
+ *   localStorage. UI should surface this as a programming error.
+ * - `{ ok: false, reason: 'storage' }` means localStorage rejected the
+ *   write (quota / private-mode / serialization). UI should surface
+ *   this with a "free up site storage" notice and not pretend the
+ *   write succeeded.
+ */
+export type StorageWriteResult =
   | { ok: true; store: BuildFitStore }
   | { ok: false; reason: 'validation' | 'storage' }
 

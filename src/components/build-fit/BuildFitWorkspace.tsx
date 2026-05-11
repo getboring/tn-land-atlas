@@ -786,6 +786,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
   // one at a time inside a bottom sheet so the map stays visible above.
   const [mobileTab, setMobileTab] = useState<'footprint' | 'fit'>('footprint')
 
+
   // ── Render ────────────────────────────────────────────────────────────────
   // Workspace overlays the map. Side panels (desktop) or bottom sheet
   // (mobile) carry the controls; the map middle stays interactive so the

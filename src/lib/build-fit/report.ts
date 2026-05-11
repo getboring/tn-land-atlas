@@ -166,7 +166,12 @@ export function formatFitSummary(input: FitSummaryInput): string {
   return lines.join('\n')
 }
 
-function describeStatus(r: FitResultDisplay): string {
+/**
+ * Render the parcel/envelope fit status as a single human-readable phrase.
+ * Exported so `FitReport.tsx` and other display surfaces don't reimplement
+ * the precedence (parcel-crossing dominates, envelope is secondary).
+ */
+export function describeStatus(r: FitResultDisplay): string {
   if (r.fitsParcel === false) return 'Crosses parcel boundary'
   if (r.fitsEnvelope === false) return 'Inside parcel, crosses setback envelope'
   if (r.fitsParcel === true) {
@@ -177,13 +182,15 @@ function describeStatus(r: FitResultDisplay): string {
   return 'No footprint placed yet'
 }
 
-function describeEnvelope(fits: boolean | null): string {
+/** Render envelope fit state as `'Fits' | 'Crosses' | '—'`. */
+export function describeEnvelope(fits: boolean | null): string {
   if (fits === true) return 'Fits'
   if (fits === false) return 'Crosses'
   return '—'
 }
 
-function formatFt(v: number | null): string {
+/** Render a nullable foot-distance as `'N ft'` or `'—'`. */
+export function formatFt(v: number | null): string {
   if (v == null) return '—'
   return `${v} ft`
 }
@@ -201,12 +208,19 @@ export function formatLatLon(lat: number, lon: number, decimals = 5): string {
   return `${Math.abs(lat).toFixed(decimals)}°${latHem}, ${Math.abs(lon).toFixed(decimals)}°${lonHem}`
 }
 
-function formatDate(iso: string): string {
-  // Trim to YYYY-MM-DD if parseable, otherwise echo the input. Keeps the
-  // report stable in tests without depending on locale.
+/**
+ * Trim an ISO timestamp to `YYYY-MM-DD`, or echo the input verbatim when
+ * unparseable. Locale-independent so test fixtures match byte-for-byte.
+ */
+export function formatReportDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toISOString().slice(0, 10)
+}
+
+/** @internal Kept for the formatFitSummary date line. */
+function formatDate(iso: string): string {
+  return formatReportDate(iso)
 }
 
 // ── parcelDiagramData ─────────────────────────────────────────────────────

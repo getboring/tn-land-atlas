@@ -21,6 +21,7 @@
 // math beyond equirectangular at parcel scale (per buildplan2 Phase 5
 // option 2). Map-in-report via captured tiles is deferred.
 
+import { useMemo } from 'react'
 import type { ParcelFeature } from '@/lib/arcgis'
 import type {
   Polygon,
@@ -28,7 +29,14 @@ import type {
   SetbackConfig,
 } from '@/lib/build-fit/schemas'
 import type { FitResultDisplay } from './FitResultPanel'
-import { parcelDiagramData, formatLatLon } from '@/lib/build-fit/report'
+import {
+  parcelDiagramData,
+  formatLatLon,
+  describeStatus,
+  describeEnvelope,
+  formatFt,
+  formatReportDate,
+} from '@/lib/build-fit/report'
 
 interface FitReportProps {
   parcel: ParcelFeature
@@ -64,12 +72,20 @@ export function FitReport({
   generatedAt,
 }: FitReportProps) {
   const p = parcel.properties
-  const diagram = parcelDiagramData({
-    parcel: parcelGeom,
-    envelope: envelopeGeom,
-    footprint: footprintGeom,
-    center,
-  })
+  // Memo the SVG diagram so a parent re-render that changes only the
+  // generatedAt timestamp (the cheap part) doesn't re-run the geodesic
+  // projection (the not-cheap part). Refreshes only when one of the four
+  // geometric inputs changes.
+  const diagram = useMemo(
+    () =>
+      parcelDiagramData({
+        parcel: parcelGeom,
+        envelope: envelopeGeom,
+        footprint: footprintGeom,
+        center,
+      }),
+    [parcelGeom, envelopeGeom, footprintGeom, center],
+  )
 
   return (
     <section
@@ -81,7 +97,7 @@ export function FitReport({
     >
       <header className="mb-4">
         <h1 className="text-xl font-semibold">Holston Scout — Building Fit Report</h1>
-        <div className="text-xs text-neutral-600">Generated {formatDate(generatedAt)}</div>
+        <div className="text-xs text-neutral-600">Generated {formatReportDate(generatedAt)}</div>
       </header>
 
       <ReportSection title="Parcel">
@@ -257,27 +273,7 @@ function Row({ label, value, mono = false }: { label: string; value: string; mon
   )
 }
 
-function describeStatus(r: FitResultDisplay): string {
-  if (r.fitsParcel === false) return 'Crosses parcel boundary'
-  if (r.fitsEnvelope === false) return 'Inside parcel, crosses setback envelope'
-  if (r.fitsParcel === true) {
-    return r.fitsEnvelope === true ? 'Fits parcel and setback envelope' : 'Fits parcel'
-  }
-  return 'No footprint placed yet'
-}
-
-function describeEnvelope(fits: boolean | null): string {
-  if (fits === true) return 'Fits'
-  if (fits === false) return 'Crosses'
-  return '—'
-}
-
-function formatFt(v: number | null): string {
-  return v == null ? '—' : `${v} ft`
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toISOString().slice(0, 10)
-}
+// Helper functions (describeStatus, describeEnvelope, formatFt,
+// formatReportDate) live in src/lib/build-fit/report.ts so the JSX-side
+// renderer and the plain-text formatFitSummary stay in sync. Do not
+// reimplement them here.
