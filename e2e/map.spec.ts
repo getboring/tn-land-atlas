@@ -247,17 +247,21 @@ test.describe('Holston Scout', () => {
     await expect(input).toHaveValue('')
   })
 
-  test('bottom action bar exposes Layers, Tools, Filter, Locate, Home', async ({ page }) => {
+  test('bottom action bar exposes Layers, Ruler, Filter, Locate, Home', async ({ page }) => {
+    // Phase 6 polish: lasso retired, Tools popover collapsed into a
+    // top-level Ruler button. Bar still has 5 buttons.
     await expect(page.getByRole('button', { name: /Map layers/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Drawing tools/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /(Ruler|Measure distance)/i })).toBeVisible()
     await expect(page.getByRole('button', { name: /^Filter(?:\s·\s\d+)?$/ })).toBeVisible()
     await expect(page.getByRole('button', { name: /Locate me/i })).toBeVisible()
     await expect(page.getByRole('button', { name: /Home view/i })).toBeVisible()
   })
 
-  test('Export control is present in the bottom-right cluster', async ({ page }) => {
-    // maplibre-gl-export adds a button with class .maplibregl-export-control.
-    await expect(page.locator('.maplibregl-export-control')).toHaveCount(1)
+  test('@watergis MapLibre export control is no longer mounted', async ({ page }) => {
+    // Phase 6 polish: maplibre-gl-export dropped (~100 kB gzip) in favor
+    // of native window.print() + @media print CSS, with explicit Print
+    // buttons on the parcel detail panel and the FitReport.
+    await expect(page.locator('.maplibregl-export-control')).toHaveCount(0)
   })
 
   test('Filter sheet opens and toggles a switch', async ({ page }) => {
@@ -277,10 +281,12 @@ test.describe('Holston Scout', () => {
     await expect(page.getByRole('button', { name: /Filter · 1/ })).toBeVisible()
   })
 
-  test('Tools popover reveals Lasso and Ruler', async ({ page }) => {
-    await page.getByRole('button', { name: /Drawing tools/i }).click()
-    await expect(page.getByRole('button', { name: /Lasso parcels/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Measure distance/i })).toBeVisible()
+  test('Ruler toggle is on the action bar (no Tools popover)', async ({ page }) => {
+    // Phase 6 polish: the Tools popover with Lasso + Ruler collapsed
+    // to a single direct Ruler toggle.
+    await expect(page.getByRole('button', { name: /Lasso parcels/i })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Drawing tools/i })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /(Ruler|Measure distance)/i })).toBeVisible()
   })
 
   test('contour-lines toggle works (lives inside the Layers popover now)', async ({ page }) => {
@@ -983,7 +989,7 @@ test.describe('Holston Scout', () => {
     await page.emulateMedia({ media: 'screen' })
   })
 
-  test('Tools popover still works after entering and exiting fit mode', async ({ page }) => {
+  test('Ruler still works after entering and exiting fit mode', async ({ page }) => {
     await loadParcelsAt(page, -82.3534, 36.3134, 16)
     await clickFirstParcel(page)
     await page.getByRole('button', { name: /Test Building Fit/i }).click()
@@ -991,13 +997,17 @@ test.describe('Holston Scout', () => {
     await page.getByRole('button', { name: /Exit Building Fit/i }).click()
     await expect(page.locator('[data-fit-workspace]')).toHaveCount(0)
     // On mobile the detail panel is full-width and overlaps the bottom
-    // action bar; close it before testing the Tools popover. Desktop has
-    // a 80-wide side panel and would not intercept, but the close path
-    // works there too.
+    // action bar; close it before clicking the Ruler. Desktop has a
+    // narrow side panel and wouldn't intercept, but closing works there
+    // too.
     await page.getByRole('button', { name: /Close property details/i }).click()
-    await page.getByRole('button', { name: /Drawing tools/i }).click()
-    await expect(page.getByRole('button', { name: /Lasso parcels/i })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Measure distance/i })).toBeVisible()
+    const ruler = page.getByRole('button', { name: /(Ruler|Measure distance)/i })
+    await expect(ruler).toBeVisible()
+    await ruler.click()
+    // Clicking activates the ruler (aria-pressed flips to true). The
+    // actual line-drawing flow is exercised by Terra Draw's own tests;
+    // we just verify the toggle works post-fit-exit.
+    await expect(ruler).toHaveAttribute('aria-pressed', 'true')
   })
 
   test('home button resets view', async ({ page }) => {
