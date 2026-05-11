@@ -20,13 +20,14 @@
 
 import { validateBbox } from './_validate'
 
+// FeatureServer endpoint (not MapServer). FEMA's CloudFront WAF blocks
+// anonymous MapServer/query from cloud-Worker IPs (verified empirically
+// during the Phase 6 production smoke); the FeatureServer endpoint hosts
+// the same data and serves it through a less-rate-limited path.
 const NFHL_BASE =
-  'https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer'
+  'https://hazards.fema.gov/arcgis/rest/services/public/NFHL/FeatureServer'
 
 // Layer 28 = "Flood Hazard Zones" (S_FLD_HAZ_AR).
-// Verified by browsing https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer
-// Layer index is stable; if FEMA renumbers it, this breaks and we surface
-// a 502.
 const FLOOD_HAZARD_LAYER_ID = 28
 
 const OUT_FIELDS = 'FLD_ZONE,ZONE_SUBTY,SFHA_TF,STATIC_BFE'
