@@ -41,7 +41,7 @@ import mlcontour from 'maplibre-contour'
 import { MaplibreExportControl } from '@watergis/maplibre-gl-export'
 import '@watergis/maplibre-gl-export/dist/maplibre-gl-export.css'
 import { queryParcelsByBbox, searchParcels, getPropertyData, getParcelByKey, queryParcelsInPolygon } from '@/lib/api'
-import type { ParcelFeature } from '@/lib/arcgis'
+import { toParcelFeature, type ParcelFeature } from '@/lib/arcgis'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Search, X, Building2, TrendingUp, Users, Share2, Check, Mountain, Lasso, Ruler, MousePointer2, LocateFixed, Filter, Star, Copy, Map as MapIcon, Eye, Clock, Layers, Home, Printer, Keyboard, AlertTriangle } from 'lucide-react'
@@ -574,10 +574,12 @@ export default function ParcelMap() {
     m.on('click', 'parcels-fill', (e) => {
       const raw = e.features?.[0]
       if (!raw) return
-      // MapLibre's MapGeoJSONFeature widens properties to a Record. We narrow
-      // back to ParcelFeature using the schema we control via the ArcGIS
-      // outFields list.
-      const f = raw as unknown as ParcelFeature
+      // MapLibre's MapGeoJSONFeature types `properties` as a generic
+      // Record. We control the field set via the ArcGIS outFields list,
+      // so a runtime shape sanity check (does it look like a parcel?)
+      // is enough — there's no untrusted input here.
+      const f = toParcelFeature(raw)
+      if (!f) return
       selectRef.current(f, m)
     })
     // Cursor hint + hover highlight via feature-state. Track the last hovered

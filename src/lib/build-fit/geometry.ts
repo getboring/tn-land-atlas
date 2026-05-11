@@ -242,10 +242,15 @@ export interface FootprintLabelInput {
 export function footprintLabels(input: FootprintLabelInput): GeoJSON.Feature<GeoJSON.Point>[] {
   const ring = input.footprint.coordinates[0]
   if (!ring || ring.length < 5) return []
-  const ne = ring[0]
-  const se = ring[1]
-  const sw = ring[2]
-  const nw = ring[3]
+  // Narrow each corner to [number, number]. ring is number[][] in the GeoJSON
+  // type; PolygonSchema's Position validator (min 2, max 3) guarantees the
+  // length at the boundary, but TypeScript doesn't carry that constraint.
+  // The narrow* helper performs an explicit shape check so the rest of this
+  // function can compose midpoints without nullable-array juggling.
+  const ne = narrowCoord(ring[0])
+  const se = narrowCoord(ring[1])
+  const sw = narrowCoord(ring[2])
+  const nw = narrowCoord(ring[3])
   if (!ne || !se || !sw || !nw) return []
 
   const midNorth = midpoint(ne, nw)
@@ -259,8 +264,30 @@ export function footprintLabels(input: FootprintLabelInput): GeoJSON.Feature<Geo
   ]
 }
 
-function midpoint(a: number[], b: number[]): [number, number] {
-  return [(a[0]! + b[0]!) / 2, (a[1]! + b[1]!) / 2]
+/**
+ * Midpoint of two GeoJSON coordinate pairs.
+ *
+ * Typed against `[number, number]` so callers can't hand in a malformed
+ * coordinate. Returns the same shape so it composes with itself
+ * (`midpoint(midpoint(a, b), midpoint(c, d))` is the rectangle center).
+ */
+function midpoint(a: [number, number], b: [number, number]): [number, number] {
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+}
+
+/**
+ * Narrow a `number[]` to `[number, number]`, or return null when the
+ * input is missing the first two finite numbers. Used to bridge the
+ * GeoJSON `number[][]` shape into the build-fit module's stricter
+ * `[number, number]` boundary without `!` assertions.
+ */
+function narrowCoord(pos: number[] | undefined): [number, number] | null {
+  if (!pos) return null
+  const x = pos[0]
+  const y = pos[1]
+  if (typeof x !== 'number' || typeof y !== 'number') return null
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  return [x, y]
 }
 
 function pointFeature(coords: [number, number], label: string): GeoJSON.Feature<GeoJSON.Point> {

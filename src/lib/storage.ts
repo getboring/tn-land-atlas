@@ -14,7 +14,10 @@
 // in. Don't add anything here that wouldn't be okay to leave in localStorage
 // on a shared machine.
 
-const STORAGE_KEY = 'holston-scout/v1'
+/** The localStorage key for saved + recent parcels. Exported for tests
+ *  and for any future migration tool that needs to read or replace the
+ *  whole payload. */
+export const STORAGE_KEY = 'holston-scout/v1'
 const RECENTS_CAP = 15
 
 export interface SavedParcel {
