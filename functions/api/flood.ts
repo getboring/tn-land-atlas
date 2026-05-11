@@ -46,7 +46,16 @@ export const onRequestPost: PagesFunction = async (context) => {
   const geometry = `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`
   const url = `${NFHL_BASE}/${FLOOD_HAZARD_LAYER_ID}/query?where=1%3D1&geometry=${encodeURIComponent(geometry)}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=${encodeURIComponent(OUT_FIELDS)}&outSR=4326&f=geojson&resultRecordCount=500`
 
-  const res = await fetch(url, { cf: { cacheTtl: 3600 } })
+  // Identify ourselves to the FEMA upstream. Anonymous requests from
+  // Cloudflare Worker IPs are sometimes blocked at the WAF; a stable
+  // User-Agent is the standard mitigation for public ArcGIS endpoints.
+  const res = await fetch(url, {
+    cf: { cacheTtl: 3600 },
+    headers: {
+      'User-Agent': 'HolstonScout/1.0 (+https://tn-land-atlas.pages.dev)',
+      Accept: 'application/json',
+    },
+  })
   if (!res.ok) {
     const detail = await res.text().catch(() => '')
     console.error('[flood] FEMA NFHL', res.status, detail.slice(0, 500))

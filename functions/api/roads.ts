@@ -57,7 +57,13 @@ out geom;`
   try {
     resp = await fetch(OVERPASS_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
+      headers: {
+        'Content-Type': 'text/plain',
+        // Overpass identifies clients via User-Agent for both rate-
+        // limiting (a stable UA gets a stable quota) and for blocking
+        // anonymous burst traffic from cloud Worker IPs.
+        'User-Agent': 'HolstonScout/1.0 (+https://tn-land-atlas.pages.dev)',
+      },
       body: query,
       // 1-hour edge cache.
       cf: { cacheTtl: 3600, cacheEverything: true },

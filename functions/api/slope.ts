@@ -30,7 +30,13 @@ async function sampleElevationMeters(lng: number, lat: number): Promise<number |
   })
   const url = `${USGS_IDENTIFY}?geometry=${encodeURIComponent(geometry)}&geometryType=esriGeometryPoint&returnGeometry=false&returnCatalogItems=false&f=json`
   try {
-    const res = await fetch(url, { cf: { cacheTtl: 3600 } })
+    const res = await fetch(url, {
+      cf: { cacheTtl: 3600 },
+      headers: {
+        'User-Agent': 'HolstonScout/1.0 (+https://tn-land-atlas.pages.dev)',
+        Accept: 'application/json',
+      },
+    })
     if (!res.ok) return null
     const data = (await res.json()) as IdentifyResp
     const v = data.value
