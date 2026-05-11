@@ -1,31 +1,29 @@
-// Top chrome bar: brand mark + wordmark on the left, reserved slots in
-// the middle and on the right, and `children` (the map) below filling
-// the remaining viewport via flex-col.
+// Top chrome bar: brand mark + wordmark on the left, `children` (the
+// map) below filling the remaining viewport via flex-col.
 //
 // The chrome is one of three brand surfaces (chrome / SurveyCornerMark /
 // brand tokens in index.css). Updates to the brand should flow through
 // all three together — see CLAUDE.md "Brand system" for the contract.
 //
-// `centerSlot` / `rightSlot` are intentionally empty in production
-// today; they're the planned mount points for a future global search
-// input and authenticated-user menu.
+// History: this used to expose `centerSlot` / `rightSlot` props for a
+// planned global search + auth button. Both stayed empty in every
+// shipped phase, so the slots were pulled out in the Phase 6 polish
+// pass. If a real auth or global search effort starts, add the slot
+// back with the same `flex-1` + `flex-none` posture; do not paper over
+// with a wrapping div.
 
 import type { ReactNode } from 'react'
 import { SurveyCornerMark } from './SurveyCornerMark'
 
 interface HolstonChromeProps {
-  /** Slot reserved for a future global search bar (not currently wired). */
-  centerSlot?: ReactNode
-  /** Slot reserved for a future auth button (not currently wired). */
-  rightSlot?: ReactNode
   children: ReactNode
 }
 
 /**
  * Renders the persistent top chrome bar and lays out the rest of the
- * viewport below it. Always mount this once at the App root.
+ * viewport below it. Mount once at the App root.
  */
-export function HolstonChrome({ centerSlot, rightSlot, children }: HolstonChromeProps) {
+export function HolstonChrome({ children }: HolstonChromeProps) {
   return (
     <div className="h-dvh flex flex-col bg-surface">
       {/* ── Top chrome bar ─────────────────────────────── */}
@@ -41,7 +39,6 @@ export function HolstonChrome({ centerSlot, rightSlot, children }: HolstonChrome
           shadow-[0_1px_3px_rgba(2,4,10,0.4)]
         "
       >
-        {/* Left: brand wordmark — Survey Corner mark + Holston Scout */}
         <div className="flex items-center gap-2.5 flex-none select-none">
           <SurveyCornerMark
             size={20}
@@ -61,20 +58,6 @@ export function HolstonChrome({ centerSlot, rightSlot, children }: HolstonChrome
           <span className="hidden sm:inline text-text-tertiary text-[10px] font-sans font-semibold uppercase tracking-[0.12em] leading-none">
             by Holston Intel
           </span>
-        </div>
-
-        {/* Center: search slot (future) */}
-        {centerSlot ? (
-          <div className="flex-1 flex justify-center max-w-md mx-auto">
-            {centerSlot}
-          </div>
-        ) : (
-          <div className="flex-1" />
-        )}
-
-        {/* Right: auth/action slot (future) */}
-        <div className="flex-none flex items-center gap-2">
-          {rightSlot}
         </div>
       </header>
 

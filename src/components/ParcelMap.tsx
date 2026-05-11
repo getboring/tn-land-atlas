@@ -218,6 +218,7 @@ export default function ParcelMap() {
   const [searchResults, setSearchResults] = useState<ParcelFeature[] | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
   const [contoursVisible, setContoursVisible] = useState(false)
+  const [hillshadeVisible, setHillshadeVisible] = useState(false)
   const [basemap, setBasemap] = useState<Basemap>('satellite')
   const [layersOpen, setLayersOpen] = useState(false)
   const [locating, setLocating] = useState(false)
@@ -413,6 +414,33 @@ export default function ParcelMap() {
           // without drowning the parcel mosaic.
           'line-color': 'rgba(245, 158, 11, 0.55)', // #FCD34D @ 55%
           'line-width': ['match', ['get', 'level'], 1, 1.4, 0.6],
+        },
+      })
+
+      // Hillshade overlay (Phase 6 polish). Uses the same Terrarium DEM
+      // tiles as contours but as a raster-dem source so MapLibre's
+      // native `hillshade` layer type can render shaded relief. Reads
+      // beautifully under satellite imagery for steep parcels — pairs
+      // with the Phase 6f slope analysis on the detail panel.
+      m.addSource('dem-hillshade', {
+        type: 'raster-dem',
+        tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        encoding: 'terrarium',
+        maxzoom: 12,
+      })
+      m.addLayer({
+        id: 'hillshade',
+        type: 'hillshade',
+        source: 'dem-hillshade',
+        layout: { visibility: 'none' },
+        paint: {
+          'hillshade-exaggeration': 0.55,
+          'hillshade-shadow-color': '#02040A',
+          'hillshade-highlight-color': '#F8FAFC',
+          // Brand-amber accent at low elevation reads as warmth on
+          // valley floors — subtle, doesn't fight imagery.
+          'hillshade-accent-color': '#F59E0B',
         },
       })
 
@@ -832,6 +860,12 @@ export default function ParcelMap() {
     map.current?.setLayoutProperty('contour-lines', 'visibility', next ? 'visible' : 'none')
   }
 
+  const toggleHillshade = () => {
+    const next = !hillshadeVisible
+    setHillshadeVisible(next)
+    map.current?.setLayoutProperty('hillshade', 'visibility', next ? 'visible' : 'none')
+  }
+
   const switchDrawMode = useCallback((next: DrawMode) => {
     if (!drawRef.current) return
     const target: DrawMode = drawMode === next ? 'idle' : next
@@ -1219,7 +1253,7 @@ export default function ParcelMap() {
             <div className="px-3 py-2 border-t border-border-subtle text-[10px] uppercase tracking-wider text-text-tertiary">
               Overlays
             </div>
-            <div className="p-2">
+            <div className="p-2 space-y-1">
               <button
                 type="button"
                 role="switch"
@@ -1244,6 +1278,34 @@ export default function ParcelMap() {
                     className={cn(
                       'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
                       contoursVisible ? 'translate-x-4' : 'translate-x-0.5',
+                    )}
+                  />
+                </span>
+              </button>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={hillshadeVisible}
+                onClick={toggleHillshade}
+                className={cn(
+                  'w-full flex items-center justify-between gap-3 px-3 h-10 rounded-lg text-left text-sm transition-colors',
+                  hillshadeVisible ? 'bg-brand/20 text-white' : 'hover:bg-white/5 text-text-primary',
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <Mountain className="w-4 h-4 opacity-60" /> Hillshade
+                </span>
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'inline-block w-9 h-5 rounded-full relative transition-colors',
+                    hillshadeVisible ? 'bg-brand' : 'bg-white/15',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                      hillshadeVisible ? 'translate-x-4' : 'translate-x-0.5',
                     )}
                   />
                 </span>
