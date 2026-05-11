@@ -16,7 +16,7 @@
 
 import { Check, AlertTriangle, Info, Save, RotateCcw, Printer, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { MAX_DIM_FT, type SetbackConfig } from '@/lib/build-fit/schemas'
+import { MAX_DIM_FT, type FitWarning, type SetbackConfig } from '@/lib/build-fit/schemas'
 
 export interface FitResultDisplay {
   fitsParcel: boolean | null
@@ -29,7 +29,10 @@ export interface FitResultDisplay {
   envelopeSqft: number | null
   coveragePct: number | null
   closestBoundaryFt: number | null
-  warnings: string[]
+  /** Structured warnings (Phase 6). Display surfaces `.message`; tests
+   *  pin on `.code`. The panel renders the first one inline; the report
+   *  lists all of them. */
+  warnings: FitWarning[]
 }
 
 interface FitResultPanelProps {
@@ -93,13 +96,26 @@ export function FitResultPanel({
         </div>
       </div>
 
-      {/* 2. Primary warning */}
-      {warnings.length > 0 && (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/30">
-          <AlertTriangle className="w-3.5 h-3.5 text-warning flex-none mt-0.5" />
-          <div className="text-[11px] text-text-secondary">{warnings[0]}</div>
-        </div>
-      )}
+      {/* 2. Primary warning. Picks the highest-severity, then first-by-array. */}
+      {warnings.length > 0 && (() => {
+        const primary =
+          warnings.find((w) => w.severity === 'error') ??
+          warnings.find((w) => w.severity === 'warning') ??
+          warnings[0]
+        if (!primary) return null
+        const tone =
+          primary.severity === 'error'
+            ? 'bg-danger/10 border-danger/30 text-danger'
+            : primary.severity === 'warning'
+              ? 'bg-warning/10 border-warning/30 text-warning'
+              : 'bg-white/5 border-border-default text-text-secondary'
+        return (
+          <div className={cn('flex items-start gap-2 px-3 py-2 rounded-lg border', tone)}>
+            <AlertTriangle className="w-3.5 h-3.5 flex-none mt-0.5" />
+            <div className="text-[11px] text-text-secondary">{primary.message}</div>
+          </div>
+        )
+      })()}
 
       {/* 3. Footprint area + 4. Coverage */}
       {footprintSqft != null && (

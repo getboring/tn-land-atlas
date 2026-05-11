@@ -23,8 +23,10 @@
 import { z } from 'zod'
 import {
   BuildFitStoreSchema,
+  BuildFitStoreSchemaV1,
   FootprintProjectSchema,
   FitSessionSchema,
+  migrateV1ToV2,
   type BuildFitStore,
 } from './schemas'
 import { getFootprints, getSessions, replaceStore } from './storage'
@@ -41,6 +43,15 @@ export const PROJECT_FILE_DISCLAIMER =
   'conditions must be verified with the local authority, surveyor, and ' +
   'design professional before purchase, permitting, or construction.'
 
+/**
+ * The export envelope. `schemaVersion` here is the FILE envelope, not the
+ * store inside it. v1 stayed at literal 1; v2 (Phase 6) keeps it at 1
+ * because the envelope itself didn't change — only the inner `data`
+ * BuildFitStore did, and `importProjectFile` accepts either v1 or v2
+ * inner data via the migrate path.
+ *
+ * Bump this literal only when the envelope fields themselves change.
+ */
 export const ProjectFileSchema = z.object({
   schemaVersion: z.literal(1),
   app: z.object({
@@ -53,6 +64,21 @@ export const ProjectFileSchema = z.object({
   data: BuildFitStoreSchema,
 })
 export type ProjectFile = z.infer<typeof ProjectFileSchema>
+
+/** Lenient envelope used at import time so we can carry a v1 inner store
+ *  through validation, then migrate before persisting. The narrowed
+ *  ProjectFileSchema is the strict shape; this is the input shape. */
+const ProjectFileEnvelopeForImportSchema = z.object({
+  schemaVersion: z.literal(1),
+  app: z.object({
+    name: z.string(),
+    version: z.string(),
+    url: z.string(),
+  }),
+  generatedAt: z.string(),
+  disclaimer: z.string(),
+  data: z.union([BuildFitStoreSchema, BuildFitStoreSchemaV1]),
+})
 
 // ── Build envelope from current state ───────────────────────────────────
 
@@ -73,7 +99,7 @@ function envelope(data: BuildFitStore): ProjectFile {
 /** Build a ProjectFile holding the full current store. */
 export function exportStore(): ProjectFile {
   return envelope({
-    schemaVersion: 1,
+    schemaVersion: 2,
     footprints: getFootprints(),
     sessions: getSessions(),
     updatedAt: new Date().toISOString(),
@@ -94,7 +120,7 @@ export function exportSession(sessionId: string): ProjectFile | null {
   const footprint = footprints.find((f) => f.id === session.footprintProjectId)
   if (!footprint) return null
   return envelope({
-    schemaVersion: 1,
+    schemaVersion: 2,
     footprints: [footprint],
     sessions: [session],
     updatedAt: new Date().toISOString(),
@@ -148,10 +174,13 @@ export function importProjectFile(text: string): ImportResult {
     return { ok: false, error: 'File is not valid JSON.' }
   }
 
-  const result = ProjectFileSchema.safeParse(parsed)
-  if (!result.success) {
-    // Drill into the first issue for a useful message.
-    const first = result.error.issues[0]
+  // Accept either v1 or v2 inner store. v1 files (written by Phases 1..5)
+  // are migrated to v2 in-memory before any further validation. This
+  // preserves Phase-5-era .hscout.json files; otherwise users who exported
+  // before Phase 6 would see import failures.
+  const lenient = ProjectFileEnvelopeForImportSchema.safeParse(parsed)
+  if (!lenient.success) {
+    const first = lenient.error.issues[0]
     const path = first?.path?.join('.') ?? '<root>'
     return {
       ok: false,
@@ -159,12 +188,25 @@ export function importProjectFile(text: string): ImportResult {
     }
   }
 
+  // Migrate v1 inner store to v2 if needed, then wrap as the strict envelope
+  // shape for the rest of this function to work with.
+  const innerData: BuildFitStore =
+    lenient.data.data.schemaVersion === 1
+      ? migrateV1ToV2(lenient.data.data)
+      : lenient.data.data
+  const file: ProjectFile = {
+    schemaVersion: lenient.data.schemaVersion,
+    app: lenient.data.app,
+    generatedAt: lenient.data.generatedAt,
+    disclaimer: lenient.data.disclaimer,
+    data: innerData,
+  }
+
   // Defense in depth: re-validate every footprint and session individually
   // before persistence. The store's upsert helpers already do this, but
   // running it here lets us batch the writes with a clean rollback story
   // (we count what we'll insert; if any sub-validation fails we abort
   // BEFORE any writes hit localStorage).
-  const file = result.data
   for (const fp of file.data.footprints) {
     const r = FootprintProjectSchema.safeParse(fp)
     if (!r.success) {
@@ -198,7 +240,7 @@ export function importProjectFile(text: string): ImportResult {
   }
 
   const mergedStore: BuildFitStore = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     footprints: [...getFootprints()],
     sessions: [...getSessions()],
     updatedAt: new Date().toISOString(),

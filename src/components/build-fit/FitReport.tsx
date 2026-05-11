@@ -236,8 +236,16 @@ export function FitReport({
       {result.warnings.length > 0 && (
         <ReportSection title="Warnings">
           <ul className="list-disc pl-5 text-xs">
-            {result.warnings.map((w) => (
-              <li key={w}>{w}</li>
+            {result.warnings.map((w, i) => (
+              // Source/severity prefix makes the printed report scannable
+              // ("flood · ..." vs "setback · ..."). Key by index because two
+              // warnings can legitimately share the same (source, code).
+              <li key={`${w.source}-${w.code}-${i}`}>
+                <span className="font-mono text-[10px] uppercase tracking-wider mr-1">
+                  {w.severity} · {w.source}
+                </span>
+                {w.message}
+              </li>
             ))}
           </ul>
         </ReportSection>

@@ -20,8 +20,10 @@
 import { useSyncExternalStore } from 'react'
 import {
   BuildFitStoreSchema,
+  BuildFitStoreSchemaV1,
   FootprintProjectSchema,
   FitSessionSchema,
+  migrateV1ToV2,
   type BuildFitStore,
   type FootprintProject,
   type FitSession,
@@ -50,7 +52,7 @@ export type StorageWriteResult =
 
 function emptyStore(): BuildFitStore {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     footprints: [],
     sessions: [],
     updatedAt: new Date(0).toISOString(),
@@ -65,9 +67,19 @@ function readRaw(): BuildFitStore {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return emptyStore()
     const parsed: unknown = JSON.parse(raw)
-    const result = BuildFitStoreSchema.safeParse(parsed)
-    if (!result.success) return emptyStore()
-    return result.data
+    // Try v2 first (the current shape).
+    const v2 = BuildFitStoreSchema.safeParse(parsed)
+    if (v2.success) return v2.data
+    // Fall back to v1 -> v2 migrate. A successful v1 parse + migrate is the
+    // path for users whose stores were last written by a Phase 5 build.
+    // After this read, the next write rewrites v2 to disk; v1 is no longer
+    // persisted.
+    const v1 = BuildFitStoreSchemaV1.safeParse(parsed)
+    if (v1.success) return migrateV1ToV2(v1.data)
+    // Anything else (corrupt JSON parse, neither version matches) is the
+    // empty store. This is the same behavior as pre-Phase-6 and protects
+    // the UI from one bad write taking down the whole workspace.
+    return emptyStore()
   } catch {
     // Quota exceeded, JSON malformed, private mode, etc. Treat as empty.
     return emptyStore()

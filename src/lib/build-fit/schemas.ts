@@ -149,16 +149,67 @@ export const SetbackConfigSchema = z.discriminatedUnion('mode', [
   SetbackManualSchema,
 ])
 
+// ── Structured warnings (Phase 6) ──────────────────────────────────────────
+// Pre-Phase-6 the fit result carried a flat `string[]` of warnings. That
+// works for one-or-two-source notices; it breaks down once flood, slope,
+// road-edge, and zoning sources are layered on. The structured shape lets
+// the UI color-code by source and group by severity, and lets the report
+// list "what needs verification" in priority order.
+//
+// `code` is a stable machine-readable identifier (e.g. `'multipolygon-largest'`,
+// `'envelope-collapsed'`, `'flood-zone-AE'`). UI displays `message`; tests
+// assert on `code` so display copy can change without breaking tests.
+// Future i18n would key off `code`.
+
+/** `error` blocks Save Placement (none ship today); `warning` surfaces
+ *  in the panel; `info` is contextual-only. */
+export const WarningSeveritySchema = z.enum(['info', 'warning', 'error'])
+
+/** Where the warning comes from. Lets the UI render an icon/color per
+ *  source and lets the report group them. */
+export const WarningSourceSchema = z.enum([
+  'geometry',         // parcel normalization, MultiPolygon largest-part pick
+  'setback',          // setback approximation, envelope collapse, manual mode
+  'parcel-snapshot',  // missing field on the snapshot
+  'flood',            // FEMA flood zone touches the parcel or envelope
+  'slope',            // DEM-derived slope above threshold
+  'edges',            // edge labeling missing / road-auto-classify low confidence
+  'imported',         // migrated from a v1 store (legacy free-text warning)
+])
+
+/** A single structured warning. */
+export const FitWarningSchema = z.object({
+  severity: WarningSeveritySchema,
+  source: WarningSourceSchema,
+  code: z.string().min(1).max(100),
+  message: z.string().min(1).max(2000),
+})
+
+// ── Edge labels (Phase 6b) ─────────────────────────────────────────────────
+// `edgeIndex` references the edge as the i-th segment of the parcel's
+// largest-part exterior ring: edge i runs from vertex i to vertex i+1.
+// For a closed ring with N vertices (last == first), there are N-1 edges
+// indexed 0..N-2.
+
+export const EdgeLabelKindSchema = z.enum(['front', 'side', 'rear', 'other'])
+
+/** One labeled parcel edge. */
+export const EdgeLabelSchema = z.object({
+  edgeIndex: z.number().int().nonnegative().max(10_000),
+  label: EdgeLabelKindSchema,
+})
+
 /**
  * The result of applying a {@link SetbackConfigSchema} to a parcel.
  * `geometry` is null when mode is 'none' or 'manual' (manual records
  * values but doesn't synthesize geometry yet). `warnings` carries
- * planning-estimate disclaimers and "envelope collapsed" notices.
+ * planning-estimate notices as structured {@link FitWarningSchema}
+ * objects.
  */
 export const BuildableEnvelopeSchema = z.object({
   mode: z.enum(['none', 'uniform', 'manual', 'computed']),
   geometry: PolygonOrMultiSchema.nullable(),
-  warnings: z.array(z.string()),
+  warnings: z.array(FitWarningSchema).max(100),
 })
 
 // ── Fit conflict ───────────────────────────────────────────────────────────
@@ -197,7 +248,7 @@ export const FitResultSchema = z.object({
   closestBoundaryFt: z.number().nonnegative().nullable(),
   measurementMethod: z.literal('geodesic'),
   conflicts: z.array(FitConflictSchema).max(10_000),
-  warnings: z.array(z.string().max(2000)).max(100),
+  warnings: z.array(FitWarningSchema).max(100),
   computedAt: z.string(),
 })
 
@@ -240,6 +291,25 @@ export const ParcelFitSnapshotSchema = z.object({
   appraisalDollars: z.number().nonnegative().max(1_000_000_000_000).nullable(),
   geometry: PolygonOrMultiSchema,
   capturedAt: z.string(),
+
+  // ── Phase 6 fields, all optional + nullable ───────────────────────────
+  // Captured if/when the relevant data source ran. `null` distinguishes
+  // "checked and found nothing applicable" from "never checked" (undefined).
+
+  /** FEMA NFHL flood zone code that touches the parcel ("X", "AE", "VE",
+   *  etc.). Null when no FEMA zone touches the parcel. Undefined when the
+   *  FEMA lookup was never run for this session. */
+  floodZone: z.string().max(50).nullable().optional(),
+
+  /** Mean slope of the parcel, in percent (rise/run × 100). Null when the
+   *  DEM source returned no data for the parcel bounds. Undefined when
+   *  slope analysis was never run for this session. */
+  meanSlopePct: z.number().nonnegative().max(1000).nullable().optional(),
+
+  /** Manually-applied or road-auto-classified edge labels for the parcel's
+   *  largest-part exterior ring. Empty array = labels checked but none
+   *  applied. Undefined = labeling was never offered. */
+  edgeLabels: z.array(EdgeLabelSchema).max(10_000).optional(),
 })
 
 // ── Fit session ────────────────────────────────────────────────────────────
@@ -277,16 +347,110 @@ const MAX_LIBRARY_ITEMS = 10_000
 
 /**
  * The full persisted shape under `holston-scout/build-fit/v1` in
- * localStorage. `schemaVersion` is a literal `1` — a breaking change to
- * any field shape bumps the literal AND adds a `migrate()` branch in
- * `storage.ts` so older payloads still read.
+ * localStorage. `schemaVersion` is `2` as of Phase 6's structured-warnings
+ * model. Older v1 payloads are migrated up at read time by
+ * {@link migrateV1ToV2} in storage.ts; we never write v1 once a
+ * Phase-6-aware build has touched the store.
  */
 export const BuildFitStoreSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   footprints: z.array(FootprintProjectSchema).max(MAX_LIBRARY_ITEMS),
   sessions: z.array(FitSessionSchema).max(MAX_LIBRARY_ITEMS),
   updatedAt: z.string(),
 })
+
+// ── v1 -> v2 migration ────────────────────────────────────────────────────
+// v1 (Phases 1..5) carried `warnings: string[]` on both BuildableEnvelope
+// and FitResult, and had no Phase-6 ParcelFitSnapshot fields. v2 lifts
+// warnings to FitWarning[] and adds three optional snapshot fields. The
+// migration is mechanical: each legacy string becomes one synthetic
+// FitWarning with severity:'warning', source:'imported', a stable
+// 'legacy-string' code, and the original text as message. The optional
+// snapshot fields stay absent (undefined) until a Phase-6 sub-phase
+// populates them on a fresh write.
+
+const LegacyStringWarningsArray = z.array(z.string().max(2000)).max(100)
+
+const BuildableEnvelopeSchemaV1 = z.object({
+  mode: z.enum(['none', 'uniform', 'manual', 'computed']),
+  geometry: PolygonOrMultiSchema.nullable(),
+  warnings: LegacyStringWarningsArray,
+})
+
+const FitResultSchemaV1 = z.object({
+  status: z.enum(['fits', 'conflict', 'unknown']),
+  fitsParcel: z.boolean(),
+  fitsEnvelope: z.boolean().nullable(),
+  footprintSqft: z.number().nonnegative().max(MAX_AREA_SQFT),
+  parcelSqft: z.number().nonnegative().max(MAX_AREA_SQFT).nullable(),
+  coveragePct: z.number().nonnegative().nullable(),
+  closestBoundaryFt: z.number().nonnegative().nullable(),
+  measurementMethod: z.literal('geodesic'),
+  conflicts: z.array(FitConflictSchema).max(10_000),
+  warnings: LegacyStringWarningsArray,
+  computedAt: z.string(),
+})
+
+const FitSessionSchemaV1 = z.object({
+  id: z.string().min(1),
+  parcelKey: z.string().min(1),
+  parcelSnapshot: ParcelFitSnapshotSchema,
+  footprintProjectId: z.string().min(1),
+  placement: FootprintPlacementSchema,
+  setbackConfig: SetbackConfigSchema,
+  envelope: BuildableEnvelopeSchemaV1,
+  result: FitResultSchemaV1,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
+/** Top-level v1 store shape. Used only on read-time migrate. */
+export const BuildFitStoreSchemaV1 = z.object({
+  schemaVersion: z.literal(1),
+  footprints: z.array(FootprintProjectSchema).max(MAX_LIBRARY_ITEMS),
+  sessions: z.array(FitSessionSchemaV1).max(MAX_LIBRARY_ITEMS),
+  updatedAt: z.string(),
+})
+
+function stringToWarning(s: string): FitWarning {
+  return {
+    severity: 'warning',
+    source: 'imported',
+    code: 'legacy-string',
+    message: s,
+  }
+}
+
+/**
+ * Upgrade a parsed v1 store to v2.
+ *
+ * - Each legacy `warnings: string[]` (on `envelope` and `result`) becomes
+ *   `FitWarning[]` with `severity: 'warning', source: 'imported', code:
+ *   'legacy-string'`.
+ * - Optional snapshot fields (floodZone, meanSlopePct, edgeLabels) stay
+ *   absent.
+ * - `schemaVersion` is rewritten to `2`.
+ *
+ * This is a pure function so tests can pin the shape.
+ */
+export function migrateV1ToV2(v1: z.infer<typeof BuildFitStoreSchemaV1>): BuildFitStore {
+  return {
+    schemaVersion: 2,
+    footprints: v1.footprints,
+    sessions: v1.sessions.map((sess) => ({
+      ...sess,
+      envelope: {
+        ...sess.envelope,
+        warnings: sess.envelope.warnings.map(stringToWarning),
+      },
+      result: {
+        ...sess.result,
+        warnings: sess.result.warnings.map(stringToWarning),
+      },
+    })),
+    updatedAt: v1.updatedAt,
+  }
+}
 
 // ── Inferred TS types, single source of truth, no hand-written copies ────
 
@@ -304,3 +468,10 @@ export type FootprintPlacement = z.infer<typeof FootprintPlacementSchema>
 export type ParcelFitSnapshot = z.infer<typeof ParcelFitSnapshotSchema>
 export type FitSession = z.infer<typeof FitSessionSchema>
 export type BuildFitStore = z.infer<typeof BuildFitStoreSchema>
+
+// Phase 6 types.
+export type WarningSeverity = z.infer<typeof WarningSeveritySchema>
+export type WarningSource = z.infer<typeof WarningSourceSchema>
+export type FitWarning = z.infer<typeof FitWarningSchema>
+export type EdgeLabelKind = z.infer<typeof EdgeLabelKindSchema>
+export type EdgeLabel = z.infer<typeof EdgeLabelSchema>

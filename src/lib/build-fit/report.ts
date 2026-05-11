@@ -158,7 +158,13 @@ export function formatFitSummary(input: FitSummaryInput): string {
 
   if (input.result.warnings.length > 0) {
     lines.push('Warnings')
-    for (const w of input.result.warnings) lines.push(`  - ${w}`)
+    for (const w of input.result.warnings) {
+      // Prefix with severity so the report reads at a glance which lines
+      // matter. Tests pin on `code`; the message is the human-readable part.
+      const tag =
+        w.severity === 'error' ? '!' : w.severity === 'warning' ? '·' : 'i'
+      lines.push(`  ${tag} ${w.message}`)
+    }
     lines.push('')
   }
 

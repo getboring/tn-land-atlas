@@ -344,6 +344,9 @@ describe('importProjectFile', () => {
 
   it('does not partially import when the single storage write fails', () => {
     upsertFootprint(fp({ id: 'fp-preserved', name: 'Keep me' }))
+    // Cast through `never` so we can express the legacy v1 shape (which
+    // the importer accepts via migrate); ProjectFile's static type wants
+    // a v2 inner store.
     const text = serializeProjectFile({
       schemaVersion: 1,
       app: { name: 'Holston Scout', version: '1.0.0', url: 'https://example.com' },
@@ -355,7 +358,7 @@ describe('importProjectFile', () => {
         sessions: [],
         updatedAt: ISO,
       },
-    })
+    } as never)
 
     withStorageWriteBlocked(() => {
       const result = importProjectFile(text)

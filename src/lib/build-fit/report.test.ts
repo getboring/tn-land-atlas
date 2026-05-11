@@ -188,12 +188,18 @@ describe('formatFitSummary', () => {
       center: [-82.345, 36.315],
       setback: { mode: 'none' },
       envelopeSqft: null,
-      result: { ...baseResult, warnings: ['Parcel is a MultiPolygon', 'Setback approximation'] },
+      result: {
+        ...baseResult,
+        warnings: [
+          { severity: 'info', source: 'geometry', code: 'multipolygon-largest', message: 'Parcel is a MultiPolygon' },
+          { severity: 'warning', source: 'setback', code: 'uniform-approximation', message: 'Setback approximation' },
+        ],
+      },
       generatedAt: ISO,
     })
     expect(out).toContain('Warnings')
-    expect(out).toContain('  - Parcel is a MultiPolygon')
-    expect(out).toContain('  - Setback approximation')
+    expect(out).toContain('Parcel is a MultiPolygon')
+    expect(out).toContain('Setback approximation')
   })
 
   it('omits the Warnings section when no warnings present', () => {

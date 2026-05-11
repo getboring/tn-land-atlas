@@ -26,6 +26,17 @@
 // so it's not in the workspace's render closure.
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024
 
+// Phase 6: structured warning factory. Each code is a stable identifier
+// tests pin on; the message is the user-facing display string.
+function warn(
+  severity: FitWarning['severity'],
+  source: FitWarning['source'],
+  code: string,
+  message: string,
+): FitWarning {
+  return { severity, source, code, message }
+}
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X, Download, Upload, AlertTriangle, Check } from 'lucide-react'
 import { ulid } from 'ulidx'
@@ -43,6 +54,7 @@ import {
   type BuildableEnvelope,
   type FitResult,
   type FitSession,
+  type FitWarning,
   type FootprintProject,
   type Polygon,
   type PolygonOrMulti,
@@ -305,7 +317,10 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         footprintGeom: null,
         center: null,
         envelope: emptyEnvelope,
-        result: { ...empty, warnings: [validated.error] },
+        result: {
+          ...empty,
+          warnings: [warn('error', 'geometry', 'parcel-geometry-invalid', validated.error)],
+        },
         subtitle: null,
       }
     }
@@ -322,7 +337,17 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         footprintGeom: null,
         center: null,
         envelope: emptyEnvelope,
-        result: { ...empty, warnings: ['Parcel centroid unavailable for default placement.'] },
+        result: {
+          ...empty,
+          warnings: [
+            warn(
+              'warning',
+              'geometry',
+              'centroid-unavailable',
+              'Parcel centroid unavailable for default placement.',
+            ),
+          ],
+        },
         subtitle: null,
       }
     }
@@ -337,8 +362,10 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
     const pSqft = parcelAreaSqft(norm.full)
     const cov = coveragePct(fpSqft, pSqft)
     const closest = closestBoundaryFt(geom, norm.full)
-    const warnings: string[] = []
-    if (norm.warning) warnings.push(norm.warning)
+    const warnings: FitWarning[] = []
+    if (norm.warning) {
+      warnings.push(warn('info', 'geometry', 'multipolygon-largest', norm.warning))
+    }
 
     // Setback envelope. Uniform mode is the only one with a runtime
     // implementation; manual mode requires front/side/rear edge
@@ -354,7 +381,12 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
           mode: 'uniform',
           geometry: envGeom,
           warnings: [
-            'Uniform setback approximation. Local zoning may require different front / side / rear values; verify with code.',
+            warn(
+              'warning',
+              'setback',
+              'uniform-approximation',
+              'Uniform setback approximation. Local zoning may require different front / side / rear values; verify with code.',
+            ),
           ],
         }
         fitsEnvelope = fitsWithinParcel(geom, envGeom)
@@ -364,7 +396,12 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
           mode: 'uniform',
           geometry: null,
           warnings: [
-            `Setback of ${setbackConfig.setbackFt} ft leaves no buildable area on this parcel.`,
+            warn(
+              'warning',
+              'setback',
+              'envelope-collapsed',
+              `Setback of ${setbackConfig.setbackFt} ft leaves no buildable area on this parcel.`,
+            ),
           ],
         }
         fitsEnvelope = false
@@ -375,7 +412,12 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
         mode: 'manual',
         geometry: null,
         warnings: [
-          'Manual setbacks need front / side / rear edge classification (Phase 6). Values are recorded but no envelope is drawn yet.',
+          warn(
+            'warning',
+            'setback',
+            'manual-needs-edges',
+            'Manual setbacks need front / side / rear edge classification (Phase 6). Values are recorded but no envelope is drawn yet.',
+          ),
         ],
       }
       for (const w of envelope.warnings) warnings.push(w)

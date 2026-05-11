@@ -366,3 +366,90 @@ describe('storage: clearAll', () => {
     expect(getSessions()).toHaveLength(1)
   })
 })
+
+// ── Phase 6: v1 -> v2 read-time migration ──────────────────────────────────
+
+describe('storage: v1 -> v2 read-time migrate', () => {
+  it('reads a v1 store written before Phase 6 and surfaces it as v2', () => {
+    // A Phase 5 user has a v1 payload sitting in localStorage. Phase 6
+    // code opens the browser; readRaw should detect v1, migrate up, and
+    // hand callers a v2 store with imported FitWarnings.
+    const v1Session = {
+      id: 'sess-legacy',
+      parcelKey: '090046M H 01300',
+      parcelSnapshot: {
+        parcelKey: '090046M H 01300',
+        ownerName: 'SMITH JOHN',
+        address: '112 FOXHALL CIR',
+        county: 'Sullivan',
+        acres: 1.5,
+        zoning: null,
+        appraisalDollars: 250000,
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [[-82.35, 36.31], [-82.34, 36.31], [-82.34, 36.32], [-82.35, 36.32], [-82.35, 36.31]],
+          ],
+        },
+        capturedAt: ISO,
+      },
+      footprintProjectId: 'fp-legacy',
+      placement: {
+        center: { lng: -82.345, lat: 36.315 },
+        rotationDeg: 0,
+        widthFt: 40,
+        lengthFt: 60,
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [[-82.346, 36.314], [-82.345, 36.314], [-82.345, 36.315], [-82.346, 36.315], [-82.346, 36.314]],
+          ],
+        },
+      },
+      setbackConfig: { mode: 'none' },
+      envelope: {
+        mode: 'none',
+        geometry: null,
+        warnings: ['Legacy envelope warning'],
+      },
+      result: {
+        status: 'fits',
+        fitsParcel: true,
+        fitsEnvelope: null,
+        footprintSqft: 2400,
+        parcelSqft: 65340,
+        coveragePct: 3.7,
+        closestBoundaryFt: 18,
+        measurementMethod: 'geodesic',
+        conflicts: [],
+        warnings: ['Legacy result warning'],
+        computedAt: ISO,
+      },
+      createdAt: ISO,
+      updatedAt: ISO,
+    }
+    window.localStorage.setItem(
+      BUILD_FIT_STORAGE_KEY,
+      JSON.stringify({
+        schemaVersion: 1,
+        footprints: [fp({ id: 'fp-legacy' })],
+        sessions: [v1Session],
+        updatedAt: ISO,
+      }),
+    )
+    __testing.resetCache()
+
+    const sessions = getSessions()
+    expect(sessions).toHaveLength(1)
+    const s = sessions[0]
+    expect(s).toBeDefined()
+    if (!s) return
+    expect(s.envelope.warnings[0]).toEqual({
+      severity: 'warning',
+      source: 'imported',
+      code: 'legacy-string',
+      message: 'Legacy envelope warning',
+    })
+    expect(s.result.warnings[0]?.code).toBe('legacy-string')
+  })
+})
