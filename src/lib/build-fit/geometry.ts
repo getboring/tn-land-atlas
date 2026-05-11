@@ -691,5 +691,82 @@ export function worseSeverity(a: FloodSeverity, b: FloodSeverity): FloodSeverity
   return SEVERITY_RANK[a] >= SEVERITY_RANK[b] ? a : b
 }
 
+// ── Phase 6d: road auto-classification ─────────────────────────────────────
+// Given a parcel and a set of road centerlines (LineStrings), label the
+// parcel edge nearest to any road as 'front'. The simplest heuristic that
+// matches what builders intuitively expect: the side of the lot closest
+// to the road IS the front. Refinements (multiple roads, corner lots,
+// flag lots) are out-of-scope MVP.
+
+interface RoadLine {
+  coordinates: number[][]
+}
+
+/**
+ * Compute auto-labeled edges for a parcel from a list of road centerlines.
+ *
+ * Returns a fresh EdgeLabel[] containing exactly one 'front' label for
+ * the edge with the smallest minimum perpendicular distance to any road
+ * segment. Other edges are NOT labeled — the user fills in side/rear
+ * manually via 6b's click-to-cycle interaction.
+ *
+ * Returns null when the parcel has no usable exterior ring or no roads
+ * were within the input.
+ *
+ * @example
+ * autoClassifyFrontEdge(parcel, roads) // -> [{ edgeIndex: 2, label: 'front' }]
+ */
+export function autoClassifyFrontEdge(
+  parcel: PolygonOrMulti,
+  roads: RoadLine[],
+): EdgeLabel[] | null {
+  if (roads.length === 0) return null
+  const largest = parcel.type === 'Polygon' ? parcel : pickLargestPart(parcel)
+  if (!largest) return null
+  const ring = largest.coordinates[0]
+  if (!ring || ring.length < 4) return null
+  const edges: GeoJSON.Feature<GeoJSON.LineString>[] = []
+  for (let i = 0; i < ring.length - 1; i++) {
+    const a = ring[i]
+    const b = ring[i + 1]
+    if (!a || !b) continue
+    edges.push(turfLineString([a, b]))
+  }
+  if (edges.length === 0) return null
+
+  // For each edge, find the minimum distance from its midpoint to any
+  // road segment. pointToLineDistance is geodesic so this is real.
+  let bestEdge = -1
+  let bestDist = Infinity
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i]
+    if (!edge) continue
+    const coords = edge.geometry.coordinates
+    const a = coords[0]
+    const b = coords[1]
+    if (!a || !b) continue
+    const ax = a[0]
+    const ay = a[1]
+    const bx = b[0]
+    const by = b[1]
+    if (typeof ax !== 'number' || typeof ay !== 'number') continue
+    if (typeof bx !== 'number' || typeof by !== 'number') continue
+    const mid = turfPoint([(ax + bx) / 2, (ay + by) / 2])
+    let minForEdge = Infinity
+    for (const road of roads) {
+      if (road.coordinates.length < 2) continue
+      const line = turfLineString(road.coordinates)
+      const d = pointToLineDistance(mid, line, { units: 'kilometers' })
+      if (d < minForEdge) minForEdge = d
+    }
+    if (minForEdge < bestDist) {
+      bestDist = minForEdge
+      bestEdge = i
+    }
+  }
+  if (bestEdge < 0) return null
+  return [{ edgeIndex: bestEdge, label: 'front' }]
+}
+
 // Re-exports so consumers don't need separate imports.
 export type { Polygon, MultiPolygon, PolygonOrMulti } from './schemas'

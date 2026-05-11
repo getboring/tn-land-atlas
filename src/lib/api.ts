@@ -142,3 +142,34 @@ export async function queryFloodZones(
 ): Promise<FloodZoneCollection> {
   return postJson<FloodZoneCollection>('/api/flood', { west, south, east, north }, signal)
 }
+
+// ── Phase 6d: roads ──────────────────────────────────────────────────────
+
+/** GeoJSON FeatureCollection of OSM road centerlines as returned by /api/roads. */
+export interface RoadCollection {
+  type: 'FeatureCollection'
+  features: Array<{
+    type: 'Feature'
+    geometry: { type: 'LineString'; coordinates: number[][] }
+    properties: {
+      osmId?: number
+      highway?: string | null
+      name?: string | null
+    }
+  }>
+}
+
+/**
+ * Fetch OSM road centerlines (way[highway]) intersecting a bounding box.
+ * Used by Phase 6d's road-auto-classify path. Cached an hour at the edge;
+ * upstream Overpass has tight rate limits so the cache is load-bearing.
+ */
+export async function queryRoads(
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+  signal?: AbortSignal,
+): Promise<RoadCollection> {
+  return postJson<RoadCollection>('/api/roads', { west, south, east, north }, signal)
+}

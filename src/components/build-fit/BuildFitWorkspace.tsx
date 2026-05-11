@@ -38,7 +38,7 @@ function warn(
 }
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { X, Download, Upload, AlertTriangle, Check, Edit3 } from 'lucide-react'
+import { X, Download, Upload, AlertTriangle, Check, Edit3, Compass } from 'lucide-react'
 import { ulid } from 'ulidx'
 import type maplibregl from 'maplibre-gl'
 import { cn } from '@/lib/utils'
@@ -79,9 +79,10 @@ import {
   parcelEdgeLabelFeatures,
   floodSeverityFor,
   worseSeverity,
+  autoClassifyFrontEdge,
   type FloodSeverity,
 } from '@/lib/build-fit/geometry'
-import { queryFloodZones, type FloodZoneCollection } from '@/lib/api'
+import { queryFloodZones, queryRoads, type FloodZoneCollection } from '@/lib/api'
 import {
   useFootprints,
   upsertFootprint,
@@ -867,6 +868,70 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
 
   const onResetCenter = useCallback(() => setUserCenter(null), [])
 
+  // ── Phase 6d: auto-classify the front edge from OSM roads ─────────────
+  // One-shot helper: fetches roads near the parcel, picks the parcel edge
+  // closest to a road, labels it 'front'. Existing labels for other edges
+  // are preserved so the user's manual work isn't wiped. Idempotent: the
+  // computed front edge replaces any existing 'front' label.
+  const [autoClassifying, setAutoClassifying] = useState(false)
+  const onAutoClassifyEdges = useCallback(async () => {
+    if (!validated.ok || autoClassifying) return
+    setAutoClassifying(true)
+    try {
+      // Bbox = parcel envelope + ~200 m pad so a road just outside the
+      // parcel still gets picked up.
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      const rings =
+        validated.geom.type === 'Polygon'
+          ? validated.geom.coordinates
+          : validated.geom.coordinates.flat()
+      for (const ring of rings) {
+        for (const pt of ring) {
+          const x = pt[0]
+          const y = pt[1]
+          if (typeof x !== 'number' || typeof y !== 'number') continue
+          if (x < minX) minX = x
+          if (x > maxX) maxX = x
+          if (y < minY) minY = y
+          if (y > maxY) maxY = y
+        }
+      }
+      if (
+        !Number.isFinite(minX) || !Number.isFinite(minY) ||
+        !Number.isFinite(maxX) || !Number.isFinite(maxY)
+      ) return
+      // ~200 m pad at TN latitude.
+      const pad = 0.0024
+      const roads = await queryRoads(minX - pad, minY - pad, maxX + pad, maxY + pad)
+      const roadLines = roads.features.map((f) => ({ coordinates: f.geometry.coordinates }))
+      const labels = autoClassifyFrontEdge(validated.geom, roadLines)
+      if (!labels || labels.length === 0) {
+        flashProjectNotice(
+          'err',
+          'No roads found nearby. Label edges manually with the Edit-edges toggle.',
+        )
+        return
+      }
+      // Merge: replace any existing 'front', preserve other labels.
+      setEdgeLabels((prev) => {
+        const stripped = prev.filter((l) => l.label !== 'front')
+        return [...stripped, ...labels]
+      })
+      flashProjectNotice(
+        'ok',
+        `Front edge auto-labeled from nearest road. Refine with the Edit-edges toggle.`,
+      )
+    } catch (err) {
+      console.error('[roads] auto-classify failed', err)
+      flashProjectNotice(
+        'err',
+        "Couldn't reach the road service. Label edges manually for now.",
+      )
+    } finally {
+      setAutoClassifying(false)
+    }
+  }, [validated, autoClassifying, flashProjectNotice])
+
   // ── Phase 5: print + copy summary handlers ──────────────────────────────
   // The FitReport markup is always mounted (gated by `hidden print:block`)
   // so window.print() works synchronously without a React commit pass.
@@ -1211,6 +1276,21 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
           )}
         >
           <Edit3 className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          onClick={onAutoClassifyEdges}
+          disabled={autoClassifying || !validated.ok}
+          aria-label="Auto-label front edge from nearest road"
+          title="Auto-label front edge from nearest road (OSM)"
+          className={cn(
+            'inline-flex items-center justify-center h-10 w-10 rounded-lg bg-surface/95 backdrop-blur border border-border-default',
+            autoClassifying
+              ? 'text-text-tertiary cursor-not-allowed'
+              : 'text-text-tertiary hover:text-white hover:bg-white/10',
+          )}
+        >
+          <Compass className={cn('w-4 h-4', autoClassifying && 'animate-spin')} />
         </button>
         <button
           type="button"

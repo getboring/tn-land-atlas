@@ -16,6 +16,7 @@ import {
   parcelEdgeLabelFeatures,
   floodSeverityFor,
   worseSeverity,
+  autoClassifyFrontEdge,
   FEET_PER_METER,
   SQM_TO_SQFT,
 } from './geometry'
@@ -725,5 +726,114 @@ describe('worseSeverity', () => {
     expect(worseSeverity('warning', 'error')).toBe('error')
     expect(worseSeverity('error', 'info')).toBe('error')
     expect(worseSeverity('none', 'none')).toBe('none')
+  })
+})
+
+// ── Phase 6d: road auto-classification ──────────────────────────────────────
+
+describe('autoClassifyFrontEdge', () => {
+  it('returns null when no roads are provided', () => {
+    expect(autoClassifyFrontEdge(smallParcel(), [])).toBeNull()
+  })
+
+  it('returns null on malformed parcel input', () => {
+    expect(
+      autoClassifyFrontEdge(
+        { type: 'Polygon', coordinates: [[]] },
+        [{ coordinates: [[0, 0], [1, 1]] }],
+      ),
+    ).toBeNull()
+  })
+
+  it("labels the edge closest to the road as 'front'", () => {
+    // Parcel near TN_CENTER. Place a road just south of the south edge.
+    const parcel = smallParcel()
+    const lat = TN_CENTER[1]
+    // smallParcel uses dLat = 0.002. Road sits just south of that edge.
+    const roadLat = lat - 0.003
+    const road = {
+      coordinates: [
+        [TN_CENTER[0] - 0.005, roadLat],
+        [TN_CENTER[0] + 0.005, roadLat],
+      ],
+    }
+    const labels = autoClassifyFrontEdge(parcel, [road])
+    expect(labels).not.toBeNull()
+    if (!labels) return
+    expect(labels).toHaveLength(1)
+    expect(labels[0]?.label).toBe('front')
+    // The south edge of the smallParcel ring is edge index 0 (vertex 0
+    // is southwest, vertex 1 is southeast — see smallParcel construction).
+    // We check the result is one of the two edges that share the
+    // southernmost vertices.
+    const parcelRing = parcel.coordinates[0]!
+    const a = parcelRing[labels[0]!.edgeIndex]!
+    const b = parcelRing[labels[0]!.edgeIndex + 1]!
+    // The chosen edge's midpoint latitude should be the lower one (south).
+    const midLat = ((a[1] ?? 0) + (b[1] ?? 0)) / 2
+    expect(midLat).toBeLessThan(lat)
+  })
+
+  it("picks one front edge even when multiple roads are present", () => {
+    const parcel = smallParcel()
+    const lat = TN_CENTER[1]
+    const roads = [
+      // South road, far.
+      {
+        coordinates: [
+          [TN_CENTER[0] - 0.005, lat - 0.01],
+          [TN_CENTER[0] + 0.005, lat - 0.01],
+        ],
+      },
+      // North road, close (will win).
+      {
+        coordinates: [
+          [TN_CENTER[0] - 0.005, lat + 0.0025],
+          [TN_CENTER[0] + 0.005, lat + 0.0025],
+        ],
+      },
+    ]
+    const labels = autoClassifyFrontEdge(parcel, roads)
+    expect(labels).not.toBeNull()
+    if (!labels) return
+    expect(labels).toHaveLength(1)
+    const parcelRing = parcel.coordinates[0]!
+    const a = parcelRing[labels[0]!.edgeIndex]!
+    const b = parcelRing[labels[0]!.edgeIndex + 1]!
+    const midLat = ((a[1] ?? 0) + (b[1] ?? 0)) / 2
+    // The chosen edge should be on the NORTH side (the close road).
+    expect(midLat).toBeGreaterThan(lat)
+  })
+
+  it('targets the largest part of a MultiPolygon parcel', () => {
+    const big = smallParcel().coordinates
+    const lng = TN_CENTER[0] + 0.05
+    const lat = TN_CENTER[1]
+    const halfM = 5
+    const dLat = halfM / 111_320
+    const dLng = halfM / (111_320 * Math.cos((lat * Math.PI) / 180))
+    const tiny: number[][][] = [
+      [
+        [lng - dLng, lat - dLat],
+        [lng + dLng, lat - dLat],
+        [lng + dLng, lat + dLat],
+        [lng - dLng, lat + dLat],
+        [lng - dLng, lat - dLat],
+      ],
+    ]
+    const multi = { type: 'MultiPolygon' as const, coordinates: [tiny, big] }
+    const road = {
+      coordinates: [
+        [TN_CENTER[0] - 0.005, TN_CENTER[1] - 0.003],
+        [TN_CENTER[0] + 0.005, TN_CENTER[1] - 0.003],
+      ],
+    }
+    const labels = autoClassifyFrontEdge(multi, [road])
+    expect(labels).not.toBeNull()
+    if (!labels) return
+    // Indices reference the big part's exterior ring (largest-by-area).
+    // Big has 4 edges -> valid indices 0..3.
+    expect(labels[0]!.edgeIndex).toBeGreaterThanOrEqual(0)
+    expect(labels[0]!.edgeIndex).toBeLessThan(4)
   })
 })
