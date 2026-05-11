@@ -245,8 +245,16 @@ export function parcelDiagramData(input: {
   if (!bbox) return null
 
   const canvas = input.canvas ?? { width: 1000, height: 750 }
-  const padX = (bbox.maxX - bbox.minX) * DIAGRAM_PAD_FRAC
-  const padY = (bbox.maxY - bbox.minY) * DIAGRAM_PAD_FRAC
+  // Refuse degenerate inputs: a zero-width or zero-height parcel bbox makes
+  // padX/padY zero and scaleX/scaleY infinite, which renders a silent
+  // garbage SVG. Real parcels never collapse this way, but a hostile or
+  // misencoded import could.
+  const rawSpanX = bbox.maxX - bbox.minX
+  const rawSpanY = bbox.maxY - bbox.minY
+  if (rawSpanX <= 0 || rawSpanY <= 0) return null
+
+  const padX = rawSpanX * DIAGRAM_PAD_FRAC
+  const padY = rawSpanY * DIAGRAM_PAD_FRAC
   const west = bbox.minX - padX
   const east = bbox.maxX + padX
   const south = bbox.minY - padY
@@ -258,6 +266,7 @@ export function parcelDiagramData(input: {
   const scaleX = canvas.width / spanX
   const scaleY = canvas.height / spanY
   const scale = Math.min(scaleX, scaleY)
+  if (!Number.isFinite(scale) || scale <= 0) return null
   const drawW = spanX * scale
   const drawH = spanY * scale
   // Center the drawing inside the canvas.
@@ -291,13 +300,26 @@ function polygonOrMultiToPath(
   const parts: string[] = []
   for (const ring of rings) {
     if (ring.length < 4) continue
-    const projected = ring.map(([lng, lat]) => project(lng, lat))
+    // Skip any vertex with a missing or non-finite axis. A single NaN
+    // coordinate would otherwise render `M NaN NaN L ...` which produces a
+    // silently-invalid SVG path. The Position schema rejects this at the
+    // boundary, but the helper is independently exported and may be called
+    // with hand-rolled geometry in the future.
+    const projected: [number, number][] = []
+    for (const pos of ring) {
+      const lng = pos[0]
+      const lat = pos[1]
+      if (typeof lng !== 'number' || typeof lat !== 'number') continue
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue
+      projected.push(project(lng, lat))
+    }
+    if (projected.length < 4) continue
     const head = projected[0]
-    if (!head) continue
+    if (!head || !Number.isFinite(head[0]) || !Number.isFinite(head[1])) continue
     let s = `M ${head[0].toFixed(2)} ${head[1].toFixed(2)}`
     for (let i = 1; i < projected.length; i += 1) {
       const p = projected[i]
-      if (!p) continue
+      if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue
       s += ` L ${p[0].toFixed(2)} ${p[1].toFixed(2)}`
     }
     s += ' Z'

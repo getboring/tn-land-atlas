@@ -417,4 +417,65 @@ describe('parcelDiagramData', () => {
     expect(y).toBeGreaterThanOrEqual(0)
     expect(y).toBeLessThanOrEqual(750)
   })
+
+  it('returns null for a zero-width bbox (degenerate parcel)', () => {
+    // All vertices share the same longitude. Without the guard this would
+    // produce scaleX = Infinity and emit a silently-broken SVG.
+    const zeroWidth: PolygonOrMulti = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-82.35, 36.31],
+          [-82.35, 36.32],
+          [-82.35, 36.33],
+          [-82.35, 36.34],
+          [-82.35, 36.31],
+        ],
+      ],
+    }
+    expect(
+      parcelDiagramData({ parcel: zeroWidth, envelope: null, footprint: null, center: null }),
+    ).toBeNull()
+  })
+
+  it('returns null for a zero-height bbox (degenerate parcel)', () => {
+    const zeroHeight: PolygonOrMulti = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-82.35, 36.31],
+          [-82.34, 36.31],
+          [-82.33, 36.31],
+          [-82.32, 36.31],
+          [-82.35, 36.31],
+        ],
+      ],
+    }
+    expect(
+      parcelDiagramData({ parcel: zeroHeight, envelope: null, footprint: null, center: null }),
+    ).toBeNull()
+  })
+
+  it('skips vertices with non-finite axes in the parcel path', () => {
+    // A real ring with one NaN vertex. The schema rejects this at the
+    // boundary, but parcelDiagramData should still degrade cleanly when
+    // called with hand-built geometry.
+    const withNaN: PolygonOrMulti = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-82.35, 36.31],
+          [Number.NaN, 36.31],
+          [-82.34, 36.32],
+          [-82.35, 36.32],
+          [-82.35, 36.31],
+        ],
+      ],
+    }
+    const d = parcelDiagramData({ parcel: withNaN, envelope: null, footprint: null, center: null })
+    // bboxOfGeometry already filters NaN; verify the path output never
+    // contains the literal "NaN".
+    expect(d).not.toBeNull()
+    expect(d?.parcelPath).not.toContain('NaN')
+  })
 })
