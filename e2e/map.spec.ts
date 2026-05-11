@@ -658,9 +658,14 @@ test.describe('Holston Scout', () => {
       ;(p as HTMLButtonElement | undefined)?.click()
     })
 
-    // The fit-envelope source should now carry features (envelope
-    // polygon, potentially multi). Poll because Turf buffer + setData
-    // flushing isn't synchronous in chromium.
+    // Phase 6a switched setbackEnvelope to a straight-line inset. On a
+    // small parcel a 10 ft inset can collapse to nothing; that's a
+    // correct outcome (the panel surfaces an 'envelope-collapsed'
+    // warning). Either outcome is acceptable here — the test is about
+    // "setback mode produces a meaningful state for a real parcel,"
+    // not about always rendering a polygon. The visible-parcel set
+    // varies by viewport size which makes a single hard assertion
+    // brittle across desktop / tablet / mobile.
     await expect
       .poll(async () =>
         await page.evaluate(() => {
@@ -669,9 +674,15 @@ test.describe('Holston Scout', () => {
               __map__?: { querySourceFeatures: (id: string) => unknown[] }
             }
           ).__map__
-          return m ? m.querySourceFeatures('fit-envelope').length : 0
+          const sourceCount = m ? m.querySourceFeatures('fit-envelope').length : 0
+          if (sourceCount > 0) return 'rendered'
+          // No envelope on the map — check that the panel is surfacing the
+          // structured 'envelope-collapsed' warning instead.
+          const text = document.body.textContent ?? ''
+          if (/leaves no buildable area/i.test(text)) return 'collapsed'
+          return 'pending'
         }), { timeout: 8000, intervals: [200, 400, 600, 1000] })
-      .toBeGreaterThan(0)
+      .not.toBe('pending')
   })
 
   test('setback Save Placement persists the envelope in the FitSession', async ({ page }) => {
@@ -717,8 +728,17 @@ test.describe('Holston Scout', () => {
     expect(s.setbackConfig.mode).toBe('uniform')
     expect(s.setbackConfig.setbackFt).toBe(10)
     expect(s.envelope.mode).toBe('uniform')
-    expect(s.envelope.geometry).not.toBeNull()
-    expect(['Polygon', 'MultiPolygon']).toContain(s.envelope.geometry.type)
+    // Phase 6a: a 10 ft straight-line inset can collapse a small parcel
+    // to null geometry. Both outcomes are valid:
+    //   - geometry: Polygon/MultiPolygon (envelope survived)
+    //   - geometry: null AND an 'envelope-collapsed' warning recorded
+    // The visible-parcel set varies by viewport, so accept both.
+    if (s.envelope.geometry !== null) {
+      expect(['Polygon', 'MultiPolygon']).toContain(s.envelope.geometry.type)
+    } else {
+      const codes = (s.envelope.warnings ?? []).map((w: { code: string }) => w.code)
+      expect(codes).toContain('envelope-collapsed')
+    }
   })
 
   test('project export downloads a .hscout.json file with the expected envelope', async ({ page }) => {
