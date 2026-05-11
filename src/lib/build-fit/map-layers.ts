@@ -66,6 +66,7 @@ export interface FitLayerSpec {
 // ── Source and layer ids (single source of truth) ─────────────────────────
 
 export const FIT_SOURCE_IDS = {
+  flood: 'fit-flood',                        // Phase 6e: FEMA NFHL flood zones
   envelope: 'fit-envelope',
   setbackLines: 'fit-setback-lines',
   parcelEdges: 'fit-parcel-edges',          // Phase 6b: clickable parcel edges
@@ -80,6 +81,8 @@ export const FIT_SOURCE_IDS = {
 // §Map Layers (lines 305-330). When inserted with the same beforeId, the
 // LAST installed sits on top, which is why we install in this exact order.
 export const FIT_LAYER_IDS_BOTTOM_TO_TOP = [
+  'fit-flood-fill',            // 4: FEMA flood zones (Phase 6e), under envelope
+  'fit-flood-outline',         // 4b: thin outline for flood zone boundary
   'fit-envelope',              // 5: buildable envelope fill, blueish wash
   'fit-setback-lines',         // 6: dashed setback offsets
   'fit-parcel-edges-line',     // 6b: parcel edges (Phase 6b)
@@ -107,6 +110,55 @@ const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', feature
 //
 // We don't import these from CSS because MapLibre paint expressions evaluate
 // at GL-shader time and can't read CSS variables. They're literals here.
+
+// ── Phase 6e: FEMA flood overlay layers ─────────────────────────────────
+// `fit-flood` source carries the FEMA NFHL polygons returned by
+// /api/flood. Each feature has `properties.severity: 'info'|'warning'|
+// 'error'` set client-side from the FLD_ZONE code:
+//   info     X500, D, X
+//   warning  A, AE, AO, AH
+//   error    V, VE (coastal wave hazard)
+// Color encodes severity so a glance at the parcel says "this is a
+// floodplain problem" vs "this is a planning footnote."
+
+function floodFillLayer(): FitLayerSpec {
+  return {
+    id: 'fit-flood-fill',
+    type: 'fill',
+    source: FIT_SOURCE_IDS.flood,
+    paint: {
+      'fill-color': [
+        'match',
+        ['get', 'severity'],
+        'error', '#F87171',   // red — coastal wave hazard
+        'warning', '#60A5FA', // blue — 1% chance flood
+        'info', '#94A3B8',    // slate — 0.2% / undetermined / outside SFHA
+        '#94A3B8',
+      ],
+      'fill-opacity': 0.22,
+    },
+  }
+}
+
+function floodOutlineLayer(): FitLayerSpec {
+  return {
+    id: 'fit-flood-outline',
+    type: 'line',
+    source: FIT_SOURCE_IDS.flood,
+    paint: {
+      'line-color': [
+        'match',
+        ['get', 'severity'],
+        'error', '#F87171',
+        'warning', '#60A5FA',
+        'info', '#94A3B8',
+        '#94A3B8',
+      ],
+      'line-width': 1.2,
+      'line-opacity': 0.85,
+    },
+  }
+}
 
 function envelopeLayer(): FitLayerSpec {
   return {
@@ -314,6 +366,8 @@ export function installFitLayers(map: FitMapTarget, options: InstallOptions = {}
   // of the previous one. Same beforeId across all installs preserves the
   // intended z-order regardless of what's already in the style.
   const specs: FitLayerSpec[] = [
+    floodFillLayer(),
+    floodOutlineLayer(),
     envelopeLayer(),
     setbackLinesLayer(),
     parcelEdgesVisibleLayer(),
@@ -366,6 +420,10 @@ export interface FitUpdate {
   parcelEdges?: GeoJSON.FeatureCollection<GeoJSON.LineString> | null
   /** Phase 6b: F/S/R/O text labels at edge midpoints. */
   parcelEdgeLabels?: GeoJSON.FeatureCollection<GeoJSON.Point> | null
+  /** Phase 6e: FEMA NFHL flood-hazard polygons. Each feature should carry
+   *  `properties.severity: 'info'|'warning'|'error'` (caller-set from
+   *  FLD_ZONE) so the paint expression can color by hazard tier. */
+  flood?: GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon> | null
 }
 
 export function updateFitLayers(map: FitMapTarget, update: FitUpdate): void {
@@ -414,6 +472,9 @@ export function updateFitLayers(map: FitMapTarget, update: FitUpdate): void {
   }
   if (update.parcelEdgeLabels !== undefined) {
     setSourceData(map, FIT_SOURCE_IDS.parcelEdgeLabels, update.parcelEdgeLabels ?? EMPTY_FC)
+  }
+  if (update.flood !== undefined) {
+    setSourceData(map, FIT_SOURCE_IDS.flood, update.flood ?? EMPTY_FC)
   }
 }
 

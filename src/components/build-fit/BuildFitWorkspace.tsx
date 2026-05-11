@@ -77,7 +77,11 @@ import {
   insetPolygonRing,
   parcelEdgeLineFeatures,
   parcelEdgeLabelFeatures,
+  floodSeverityFor,
+  worseSeverity,
+  type FloodSeverity,
 } from '@/lib/build-fit/geometry'
+import { queryFloodZones, type FloodZoneCollection } from '@/lib/api'
 import {
   useFootprints,
   upsertFootprint,
@@ -198,6 +202,120 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
   // toggles the visible parcel-edges layer + click handler.
   const [edgeLabels, setEdgeLabels] = useState<EdgeLabel[]>([])
   const [editingEdges, setEditingEdges] = useState(false)
+
+  // Phase 6e: FEMA NFHL flood zones intersecting the parcel bbox.
+  // Fetched once per parcel via /api/flood. `floodZones` is the raw
+  // collection; the severity + zone string are DERIVED via useMemo
+  // below so we don't fight the react-hooks set-state-in-effect rule.
+  const [floodZones, setFloodZones] = useState<FloodZoneCollection | null>(null)
+
+  // ── Phase 6e: fetch FEMA flood zones intersecting the parcel ─────────
+  // One fetch per parcel mount. If the parcel changes (new selection),
+  // the workspace unmounts/remounts and this re-fires. Result drives:
+  //   - the fit-flood map layer (visible polygons)
+  //   - a structured warning (severity from FLD_ZONE)
+  //   - the snapshot's floodZone string (most severe zone touching parcel)
+  useEffect(() => {
+    if (!validated.ok) return
+    let cancelled = false
+    const controller = new AbortController()
+    // Compute the parcel bbox to scope the upstream query.
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    const rings =
+      validated.geom.type === 'Polygon'
+        ? validated.geom.coordinates
+        : validated.geom.coordinates.flat()
+    for (const ring of rings) {
+      for (const pt of ring) {
+        const x = pt[0]
+        const y = pt[1]
+        if (typeof x !== 'number' || typeof y !== 'number') continue
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+    if (
+      !Number.isFinite(minX) || !Number.isFinite(minY) ||
+      !Number.isFinite(maxX) || !Number.isFinite(maxY)
+    ) {
+      return
+    }
+    // Pad ~50m so we capture neighboring flood polygons whose edges
+    // touch the parcel boundary. 50m ≈ 0.00045° lat / lng at TN latitude.
+    const pad = 0.0006
+    queryFloodZones(minX - pad, minY - pad, maxX + pad, maxY + pad, controller.signal)
+      .then((data) => {
+        if (cancelled) return
+        setFloodZones(data)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        // AbortError is silent (just navigated). Real errors degrade
+        // gracefully: no flood overlay, no warning. We do not block the
+        // workspace on a FEMA outage.
+        if (err instanceof Error && err.name === 'AbortError') return
+        console.error('[flood] fetch failed', err)
+      })
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [validated])
+
+  // Pick the worst zone severity that actually touches the parcel and
+  // surface it as the snapshot's floodZone string. Derived via useMemo
+  // from the raw fetch result so a parent re-render doesn't recompute it.
+  // The upstream FEMA filter already constrained to the parcel envelope
+  // and FEMA polygons are small at parcel scale, so we don't run a
+  // separate Turf intersect — the bbox-intersect FEMA already applied is
+  // sufficient at this resolution.
+  const { floodSeverity, floodZone } = useMemo<{
+    floodSeverity: FloodSeverity
+    floodZone: string | null
+  }>(() => {
+    if (!floodZones || !validated.ok) {
+      return { floodSeverity: 'none', floodZone: null }
+    }
+    let worst: FloodSeverity = 'none'
+    let worstZone: string | null = null
+    for (const f of floodZones.features) {
+      const code = f.properties.FLD_ZONE ?? null
+      const sev = floodSeverityFor(code)
+      const next = worseSeverity(worst, sev)
+      if (next !== worst) {
+        worst = next
+        worstZone = code
+      }
+    }
+    return { floodSeverity: worst, floodZone: worstZone }
+  }, [floodZones, validated])
+
+  // Push flood polygons to the map source. Each feature gains a
+  // `properties.severity` so the paint expression can color by tier.
+  useEffect(() => {
+    if (!floodZones) {
+      updateFitLayers(asFitTarget(map), { flood: null })
+      return
+    }
+    const features: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>[] = []
+    for (const f of floodZones.features) {
+      const sev = floodSeverityFor(f.properties.FLD_ZONE)
+      if (sev === 'none') continue // don't render outside-SFHA polygons
+      features.push({
+        type: 'Feature',
+        geometry: f.geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon,
+        properties: {
+          severity: sev,
+          zone: f.properties.FLD_ZONE,
+        },
+      })
+    }
+    updateFitLayers(asFitTarget(map), {
+      flood: { type: 'FeatureCollection', features },
+    })
+  }, [floodZones, map])
 
   // Saved-confirmation flash for the Save Placement button. Cleared by a
   // timeout scheduled from the save handler itself (not from an effect)
@@ -379,6 +497,23 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       warnings.push(warn('info', 'geometry', 'multipolygon-largest', norm.warning))
     }
 
+    // Phase 6e: flood-zone warning. Severity comes from the worst zone
+    // touching the parcel; the message includes the FLD_ZONE code so the
+    // user can look it up. 'none' is suppressed (no flood concern).
+    if (floodSeverity !== 'none' && floodZone) {
+      const sevMessages: Record<FloodSeverity, string> = {
+        none: '',
+        info: `Parcel touches FEMA zone ${floodZone}. 0.2% annual chance flood or undetermined risk; verify before building.`,
+        warning: `Parcel sits in FEMA Special Flood Hazard Area zone ${floodZone}. 1% annual chance flood; elevation certificates and flood insurance typically required.`,
+        error: `Parcel sits in FEMA coastal SFHA zone ${floodZone} (V/VE). Wave hazard; building restrictions and significant insurance costs apply.`,
+      }
+      const code = `flood-zone-${floodZone}`
+      const message = sevMessages[floodSeverity]
+      if (message) {
+        warnings.push(warn(floodSeverity, 'flood', code, message))
+      }
+    }
+
     // Setback envelope. Uniform mode is the only one with a runtime
     // implementation; manual mode requires front/side/rear edge
     // classification (Phase 6 work) so the UI accepts inputs but we don't
@@ -546,7 +681,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       },
       subtitle: `${draftValues.widthFt} × ${draftValues.lengthFt} ft @ ${draftValues.rotationDeg}°`,
     }
-  }, [validated, draftValues, userCenter, setbackConfig, edgeLabels])
+  }, [validated, draftValues, userCenter, setbackConfig, edgeLabels, floodSeverity, floodZone])
 
   // ── Push computed footprint + center handle to the map ──────────────────
   useEffect(() => {
@@ -945,6 +1080,13 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       // Phase 6b: snapshot any edge labels the user applied during this
       // session so a saved placement is reproducible later.
       edgeLabels: edgeLabels.length > 0 ? edgeLabels : undefined,
+      // Phase 6e: snapshot the worst flood zone touching the parcel.
+      // null means "checked and not in SFHA"; undefined means "FEMA
+      // lookup never ran for this session" (e.g. fetch error, offline).
+      floodZone:
+        floodZones != null
+          ? floodZone
+          : undefined,
     }
     if (!snapshot.parcelKey) {
       // Without a GISLINK we have no stable handle for the FitSession's
@@ -995,7 +1137,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       setPlacementSavedAt(null)
       savedFlashTimeoutRef.current = null
     }, 1500)
-  }, [computed, currentProject, draftValues, parcel, validated, selectFootprint, setbackConfig, edgeLabels, flashProjectNotice])
+  }, [computed, currentProject, draftValues, parcel, validated, selectFootprint, setbackConfig, edgeLabels, floodZone, floodZones, flashProjectNotice])
 
   // Make sure a pending flash-clear can't fire after unmount.
   useEffect(() => {
@@ -1203,6 +1345,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
           envelopeGeom={computed.envelope.geometry}
           envelopeSqft={computed.result.envelopeSqft}
           generatedAt={new Date().toISOString()}
+          floodZone={floodZones ? floodZone : undefined}
         />
       )}
     </div>

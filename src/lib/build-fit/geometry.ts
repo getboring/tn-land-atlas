@@ -639,5 +639,57 @@ function pickLargestPart(geom: PolygonOrMulti): Polygon | null {
   return best
 }
 
+// ── Phase 6e: flood-zone helpers ────────────────────────────────────────────
+
+/**
+ * Severity tier for a FEMA NFHL flood zone code. Used to drive the map
+ * color, the structured warning, and the snapshot's `floodZone` field.
+ *
+ * Reference: FEMA NFHL FLD_ZONE values.
+ *   error   V, VE         Coastal SFHA + wave hazard
+ *   warning A, AE, AO, AH 1% annual chance flood (SFHA without coastal V)
+ *   info    X500, D       0.2% annual chance, undetermined
+ *   none    X (or empty)  Outside SFHA — not flagged
+ */
+export type FloodSeverity = 'none' | 'info' | 'warning' | 'error'
+
+/**
+ * Map a raw FLD_ZONE string to a severity tier. Unknown / empty zones
+ * fall through to 'none' (FEMA standard: zone X is the catch-all
+ * "outside SFHA" code; treating empty as X is appropriate).
+ *
+ * @example
+ * floodSeverityFor('VE')   // -> 'error'
+ * floodSeverityFor('AE')   // -> 'warning'
+ * floodSeverityFor('X500') // -> 'info'
+ * floodSeverityFor('X')    // -> 'none'
+ * floodSeverityFor(null)   // -> 'none'
+ */
+export function floodSeverityFor(zone: string | null | undefined): FloodSeverity {
+  const z = (zone ?? '').trim().toUpperCase()
+  if (!z || z === 'X') return 'none'
+  if (z === 'V' || z === 'VE') return 'error'
+  if (z === 'A' || z === 'AE' || z === 'AO' || z === 'AH') return 'warning'
+  if (z === 'X500' || z === 'D') return 'info'
+  // Unknown FEMA codes default to 'info' — surface but don't alarm.
+  return 'info'
+}
+
+/** Severity rank for choosing the "worst" zone touching a parcel. */
+const SEVERITY_RANK: Record<FloodSeverity, number> = {
+  none: 0,
+  info: 1,
+  warning: 2,
+  error: 3,
+}
+
+/**
+ * Compare two severities; returns the worse of the two. Used to pick the
+ * highest-severity zone among many touching a single parcel.
+ */
+export function worseSeverity(a: FloodSeverity, b: FloodSeverity): FloodSeverity {
+  return SEVERITY_RANK[a] >= SEVERITY_RANK[b] ? a : b
+}
+
 // Re-exports so consumers don't need separate imports.
 export type { Polygon, MultiPolygon, PolygonOrMulti } from './schemas'

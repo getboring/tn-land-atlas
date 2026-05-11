@@ -14,6 +14,8 @@ import {
   insetPolygonRing,
   parcelEdgeLineFeatures,
   parcelEdgeLabelFeatures,
+  floodSeverityFor,
+  worseSeverity,
   FEET_PER_METER,
   SQM_TO_SQFT,
 } from './geometry'
@@ -679,5 +681,49 @@ describe('parcelEdgeLabelFeatures', () => {
     const expectedMid = [(a[0]! + b[0]!) / 2, (a[1]! + b[1]!) / 2]
     expect(features[0]?.geometry.coordinates[0]).toBeCloseTo(expectedMid[0]!, 6)
     expect(features[0]?.geometry.coordinates[1]).toBeCloseTo(expectedMid[1]!, 6)
+  })
+})
+
+// ── Phase 6e: flood-zone severity helpers ──────────────────────────────────
+
+describe('floodSeverityFor', () => {
+  it('classifies coastal zones (V, VE) as error', () => {
+    expect(floodSeverityFor('V')).toBe('error')
+    expect(floodSeverityFor('VE')).toBe('error')
+  })
+  it('classifies 1% chance SFHA zones (A, AE, AO, AH) as warning', () => {
+    for (const z of ['A', 'AE', 'AO', 'AH']) {
+      expect(floodSeverityFor(z)).toBe('warning')
+    }
+  })
+  it('classifies 0.2% chance and undetermined as info', () => {
+    expect(floodSeverityFor('X500')).toBe('info')
+    expect(floodSeverityFor('D')).toBe('info')
+  })
+  it('classifies plain X (outside SFHA) as none', () => {
+    expect(floodSeverityFor('X')).toBe('none')
+  })
+  it('case-insensitive and trims whitespace', () => {
+    expect(floodSeverityFor(' ve ')).toBe('error')
+    expect(floodSeverityFor('ae')).toBe('warning')
+  })
+  it('returns none for null / undefined / empty input', () => {
+    expect(floodSeverityFor(null)).toBe('none')
+    expect(floodSeverityFor(undefined)).toBe('none')
+    expect(floodSeverityFor('')).toBe('none')
+  })
+  it('unknown codes default to info (surface without alarm)', () => {
+    expect(floodSeverityFor('B')).toBe('info') // legacy pre-1986 code
+    expect(floodSeverityFor('FLOODWAY')).toBe('info')
+  })
+})
+
+describe('worseSeverity', () => {
+  it('returns the higher-severity tier', () => {
+    expect(worseSeverity('none', 'info')).toBe('info')
+    expect(worseSeverity('info', 'warning')).toBe('warning')
+    expect(worseSeverity('warning', 'error')).toBe('error')
+    expect(worseSeverity('error', 'info')).toBe('error')
+    expect(worseSeverity('none', 'none')).toBe('none')
   })
 })

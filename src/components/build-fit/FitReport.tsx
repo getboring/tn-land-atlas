@@ -57,6 +57,9 @@ interface FitReportProps {
   envelopeSqft: number | null
   /** ISO timestamp the report was generated at. */
   generatedAt: string
+  /** Phase 6e: worst FEMA flood zone touching the parcel. `undefined`
+   *  means the lookup didn't run; null means "checked, not in SFHA". */
+  floodZone?: string | null
 }
 
 export function FitReport({
@@ -70,6 +73,7 @@ export function FitReport({
   envelopeGeom,
   envelopeSqft,
   generatedAt,
+  floodZone,
 }: FitReportProps) {
   const p = parcel.properties
   // Memo the SVG diagram so a parent re-render that changes only the
@@ -114,6 +118,13 @@ export function FitReport({
           label="Appraised value"
           value={p.APPRAISAL != null ? `$${Math.round(p.APPRAISAL).toLocaleString()}` : '—'}
         />
+        {floodZone !== undefined && (
+          <Row
+            label="FEMA flood zone"
+            value={floodZone ?? 'Outside SFHA'}
+            mono
+          />
+        )}
       </ReportSection>
 
       <ReportSection title="Footprint">

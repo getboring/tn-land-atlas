@@ -101,3 +101,44 @@ export async function getParcelByKey(key: string): Promise<ParcelFeature> {
 export async function getPropertyData(parcelKey: string): Promise<PropertyData> {
   return postJson<PropertyData>('/api/property', { parcelKey })
 }
+
+// ── Phase 6e: flood zones ──────────────────────────────────────────────────
+
+/**
+ * GeoJSON FeatureCollection of FEMA NFHL flood-hazard polygons returned
+ * by `/api/flood`. Each feature's properties carry the upstream
+ * `FLD_ZONE` code (X, AE, VE, etc.) and a few related fields.
+ */
+export interface FloodZoneFeature {
+  type: 'Feature'
+  geometry: {
+    type: 'Polygon' | 'MultiPolygon'
+    coordinates: number[][][] | number[][][][]
+  }
+  properties: {
+    FLD_ZONE?: string | null
+    ZONE_SUBTY?: string | null
+    SFHA_TF?: string | null
+    STATIC_BFE?: number | null
+  }
+}
+
+export interface FloodZoneCollection {
+  type: 'FeatureCollection'
+  features: FloodZoneFeature[]
+}
+
+/**
+ * Fetch FEMA NFHL flood-hazard polygons intersecting a bounding box. Used
+ * by the build-fit workspace to check whether a parcel sits in a flood
+ * zone. Cached an hour at the edge.
+ */
+export async function queryFloodZones(
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+  signal?: AbortSignal,
+): Promise<FloodZoneCollection> {
+  return postJson<FloodZoneCollection>('/api/flood', { west, south, east, north }, signal)
+}
