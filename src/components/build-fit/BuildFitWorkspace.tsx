@@ -38,7 +38,7 @@ function warn(
 }
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { X, Download, Upload, AlertTriangle, Check } from 'lucide-react'
+import { X, Download, Upload, AlertTriangle, Check, Edit3 } from 'lucide-react'
 import { ulid } from 'ulidx'
 import type maplibregl from 'maplibre-gl'
 import { cn } from '@/lib/utils'
@@ -52,6 +52,8 @@ import {
 import {
   PolygonOrMultiSchema,
   type BuildableEnvelope,
+  type EdgeLabel,
+  type EdgeLabelKind,
   type FitResult,
   type FitSession,
   type FitWarning,
@@ -72,6 +74,8 @@ import {
   footprintLabels,
   setbackEnvelope,
   envelopeAreaSqft,
+  parcelEdgeLineFeatures,
+  parcelEdgeLabelFeatures,
 } from '@/lib/build-fit/geometry'
 import {
   useFootprints,
@@ -186,6 +190,13 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
   // probably wants the same setback to apply across different building
   // shapes on the same parcel).
   const [setbackConfig, setSetbackConfig] = useState<SetbackConfig>({ mode: 'none' })
+
+  // Phase 6b: per-edge labels (front/side/rear/other) on the parcel's
+  // largest-part exterior ring. Lives in workspace state until Save
+  // Placement snapshots it into parcelSnapshot.edgeLabels. `editingEdges`
+  // toggles the visible parcel-edges layer + click handler.
+  const [edgeLabels, setEdgeLabels] = useState<EdgeLabel[]>([])
+  const [editingEdges, setEditingEdges] = useState(false)
 
   // Saved-confirmation flash for the Save Placement button. Cleared by a
   // timeout scheduled from the save handler itself (not from an effect)
@@ -476,6 +487,77 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
     }
   }, [map, computed, draftValues])
 
+  // ── Phase 6b: push parcel edges + their labels to the map ──────────────
+  // Visible only while editingEdges is true. Off -> clear both sources so
+  // the lines and letters disappear without unmounting the layers.
+  useEffect(() => {
+    if (!validated.ok || !editingEdges) {
+      updateFitLayers(asFitTarget(map), {
+        parcelEdges: null,
+        parcelEdgeLabels: null,
+      })
+      return
+    }
+    updateFitLayers(asFitTarget(map), {
+      parcelEdges: {
+        type: 'FeatureCollection',
+        features: parcelEdgeLineFeatures(validated.geom, edgeLabels),
+      },
+      parcelEdgeLabels: {
+        type: 'FeatureCollection',
+        features: parcelEdgeLabelFeatures(validated.geom, edgeLabels),
+      },
+    })
+  }, [map, validated, editingEdges, edgeLabels])
+
+  // ── Phase 6b: click an edge to cycle its label ─────────────────────────
+  // none -> front -> side -> rear -> other -> none. Cycles only while
+  // editingEdges is true; otherwise the click is a no-op so map pan/zoom
+  // works normally.
+  useEffect(() => {
+    if (!editingEdges) return
+    const LABEL_CYCLE: (EdgeLabelKind | 'none')[] = ['none', 'front', 'side', 'rear', 'other']
+    const onClick = (e: maplibregl.MapMouseEvent) => {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['fit-parcel-edges-hit'],
+      })
+      const f = features[0]
+      if (!f) return
+      const raw = (f.properties as { edgeIndex?: unknown } | null)?.edgeIndex
+      if (typeof raw !== 'number') return
+      const idx = raw
+      // Stop the click from also re-selecting/clearing the parcel.
+      e.preventDefault()
+      setEdgeLabels((prev) => {
+        const current = prev.find((l) => l.edgeIndex === idx)
+        const currentLabel = (current?.label ?? 'none') as EdgeLabelKind | 'none'
+        const at = LABEL_CYCLE.indexOf(currentLabel)
+        const nextLabel = LABEL_CYCLE[(at + 1) % LABEL_CYCLE.length] ?? 'none'
+        if (nextLabel === 'none') {
+          return prev.filter((l) => l.edgeIndex !== idx)
+        }
+        const without = prev.filter((l) => l.edgeIndex !== idx)
+        return [...without, { edgeIndex: idx, label: nextLabel as EdgeLabelKind }]
+      })
+    }
+    map.on('click', 'fit-parcel-edges-hit', onClick)
+    // Pointer cursor over edges so the affordance reads.
+    const onEnter = () => {
+      map.getCanvas().style.cursor = 'pointer'
+    }
+    const onLeave = () => {
+      map.getCanvas().style.cursor = ''
+    }
+    map.on('mouseenter', 'fit-parcel-edges-hit', onEnter)
+    map.on('mouseleave', 'fit-parcel-edges-hit', onLeave)
+    return () => {
+      map.off('click', 'fit-parcel-edges-hit', onClick)
+      map.off('mouseenter', 'fit-parcel-edges-hit', onEnter)
+      map.off('mouseleave', 'fit-parcel-edges-hit', onLeave)
+      map.getCanvas().style.cursor = ''
+    }
+  }, [editingEdges, map])
+
   // ── Drag handle: move the footprint by dragging its center ──────────────
   // Real maplibregl events (not Terra Draw, which would clash with the
   // lasso/ruler instance per buildplan2 rule #7). Mouse + touch parity for
@@ -764,6 +846,9 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       appraisalDollars: p.APPRAISAL ?? null,
       geometry: validated.geom,
       capturedAt: now,
+      // Phase 6b: snapshot any edge labels the user applied during this
+      // session so a saved placement is reproducible later.
+      edgeLabels: edgeLabels.length > 0 ? edgeLabels : undefined,
     }
     if (!snapshot.parcelKey) {
       // Without a GISLINK we have no stable handle for the FitSession's
@@ -814,7 +899,7 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
       setPlacementSavedAt(null)
       savedFlashTimeoutRef.current = null
     }, 1500)
-  }, [computed, currentProject, draftValues, parcel, validated, selectFootprint, setbackConfig, flashProjectNotice])
+  }, [computed, currentProject, draftValues, parcel, validated, selectFootprint, setbackConfig, edgeLabels, flashProjectNotice])
 
   // Make sure a pending flash-clear can't fire after unmount.
   useEffect(() => {
@@ -872,6 +957,23 @@ export default function BuildFitWorkspace({ map, parcel, onClose }: BuildFitWork
           aria-label="Project file to import"
           className="hidden"
         />
+        <button
+          type="button"
+          onClick={() => setEditingEdges((v) => !v)}
+          aria-pressed={editingEdges}
+          aria-label={editingEdges ? 'Exit edge labeling' : 'Label parcel edges'}
+          title={editingEdges
+            ? 'Exit edge labeling'
+            : 'Click parcel edges to cycle front / side / rear / other'}
+          className={cn(
+            'inline-flex items-center justify-center h-10 w-10 rounded-lg backdrop-blur border',
+            editingEdges
+              ? 'bg-brand text-white border-brand'
+              : 'bg-surface/95 border-border-default text-text-tertiary hover:text-white hover:bg-white/10',
+          )}
+        >
+          <Edit3 className="w-4 h-4" />
+        </button>
         <button
           type="button"
           onClick={onClose}

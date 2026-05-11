@@ -68,6 +68,8 @@ export interface FitLayerSpec {
 export const FIT_SOURCE_IDS = {
   envelope: 'fit-envelope',
   setbackLines: 'fit-setback-lines',
+  parcelEdges: 'fit-parcel-edges',          // Phase 6b: clickable parcel edges
+  parcelEdgeLabels: 'fit-parcel-edge-labels', // Phase 6b: F/S/R/O text labels
   footprint: 'fit-footprint',
   handles: 'fit-footprint-handles',
   conflicts: 'fit-conflicts',
@@ -78,13 +80,16 @@ export const FIT_SOURCE_IDS = {
 // §Map Layers (lines 305-330). When inserted with the same beforeId, the
 // LAST installed sits on top, which is why we install in this exact order.
 export const FIT_LAYER_IDS_BOTTOM_TO_TOP = [
-  'fit-envelope',          // 5: buildable envelope fill, blueish wash
-  'fit-setback-lines',     // 6: dashed setback offsets
-  'fit-footprint-fill',    // 7: proposed structure, amber valid / red conflict
-  'fit-footprint-outline', // 8: exact building edge
-  'fit-footprint-handles', // 9: center / rotate / resize handles
-  'fit-conflicts',         // 10: red line segments at boundary violations
-  'fit-labels',            // 11: dimension and area labels
+  'fit-envelope',              // 5: buildable envelope fill, blueish wash
+  'fit-setback-lines',         // 6: dashed setback offsets
+  'fit-parcel-edges-line',     // 6b: parcel edges (Phase 6b)
+  'fit-parcel-edges-hit',      // 6b: invisible wide click target
+  'fit-parcel-edge-labels',    // 6b: F/S/R/O letter labels
+  'fit-footprint-fill',        // 7: proposed structure, amber valid / red conflict
+  'fit-footprint-outline',     // 8: exact building edge
+  'fit-footprint-handles',     // 9: center / rotate / resize handles
+  'fit-conflicts',             // 10: red line segments at boundary violations
+  'fit-labels',                // 11: dimension and area labels
 ] as const
 
 const ALL_FIT_SOURCE_IDS: readonly string[] = Object.values(FIT_SOURCE_IDS)
@@ -126,6 +131,73 @@ function setbackLinesLayer(): FitLayerSpec {
       'line-width': 1.5,
       'line-dasharray': [2, 2],
       'line-opacity': 0.7,
+    },
+  }
+}
+
+// ── Phase 6b: parcel-edge labeling layers ──────────────────────────────
+// `parcel-edges` carries one LineString feature per exterior-ring edge of
+// the parcel's largest polygon part. Each feature has properties:
+//   edgeIndex: number   the edge's index in vertex order
+//   label: 'none' | 'front' | 'side' | 'rear' | 'other'
+// Color encodes the label so a glance at the parcel says which sides are
+// classified. An invisible-but-wider hit layer increases the click target
+// to ~12px so users don't need surveyor-grade aim.
+
+function parcelEdgesVisibleLayer(): FitLayerSpec {
+  return {
+    id: 'fit-parcel-edges-line',
+    type: 'line',
+    source: FIT_SOURCE_IDS.parcelEdges,
+    paint: {
+      'line-width': 4,
+      // Label -> hue. 'none' shows a neutral cyan; front/side/rear/other
+      // each get a distinct hue so the parcel reads at a glance.
+      'line-color': [
+        'match',
+        ['get', 'label'],
+        'front', '#22D3EE', // cyan-300 (street side, where road meets parcel)
+        'side',  '#A78BFA', // violet-400 (side yards)
+        'rear',  '#F59E0B', // brand amber (rear setback usually deepest)
+        'other', '#94A3B8', // slate (no zoning meaning)
+        '#60A5FA',          // 'none' fallback: pale blue
+      ],
+      'line-opacity': 0.9,
+    },
+  }
+}
+
+function parcelEdgesHitLayer(): FitLayerSpec {
+  // Transparent fat line that captures clicks. Sits on top of the visible
+  // edge line so MapLibre's hit-test prefers it.
+  return {
+    id: 'fit-parcel-edges-hit',
+    type: 'line',
+    source: FIT_SOURCE_IDS.parcelEdges,
+    paint: {
+      'line-color': '#000000',
+      'line-opacity': 0,
+      'line-width': 14,
+    },
+  }
+}
+
+function parcelEdgeLabelsLayer(): FitLayerSpec {
+  return {
+    id: 'fit-parcel-edge-labels',
+    type: 'symbol',
+    source: FIT_SOURCE_IDS.parcelEdgeLabels,
+    layout: {
+      'text-field': ['get', 'letter'],
+      'text-size': 12,
+      'text-font': ['Open Sans Regular'],
+      'text-anchor': 'center',
+      'text-allow-overlap': true,
+    },
+    paint: {
+      'text-color': '#F8FAFC',
+      'text-halo-color': '#02040A',
+      'text-halo-width': 1.4,
     },
   }
 }
@@ -244,6 +316,9 @@ export function installFitLayers(map: FitMapTarget, options: InstallOptions = {}
   const specs: FitLayerSpec[] = [
     envelopeLayer(),
     setbackLinesLayer(),
+    parcelEdgesVisibleLayer(),
+    parcelEdgesHitLayer(),
+    parcelEdgeLabelsLayer(),
     footprintFillLayer(),
     footprintOutlineLayer(),
     handlesLayer(),
@@ -286,6 +361,11 @@ export interface FitUpdate {
   handles?: GeoJSON.FeatureCollection<GeoJSON.Point> | null
   /** Pre-built FeatureCollection for dimension/area labels (Point + label prop). */
   labels?: GeoJSON.FeatureCollection<GeoJSON.Point> | null
+  /** Phase 6b: parcel-edge line segments. Each feature carries
+   *  `properties.edgeIndex: number` and `properties.label`. */
+  parcelEdges?: GeoJSON.FeatureCollection<GeoJSON.LineString> | null
+  /** Phase 6b: F/S/R/O text labels at edge midpoints. */
+  parcelEdgeLabels?: GeoJSON.FeatureCollection<GeoJSON.Point> | null
 }
 
 export function updateFitLayers(map: FitMapTarget, update: FitUpdate): void {
@@ -328,6 +408,12 @@ export function updateFitLayers(map: FitMapTarget, update: FitUpdate): void {
   }
   if (update.labels !== undefined) {
     setSourceData(map, FIT_SOURCE_IDS.labels, update.labels ?? EMPTY_FC)
+  }
+  if (update.parcelEdges !== undefined) {
+    setSourceData(map, FIT_SOURCE_IDS.parcelEdges, update.parcelEdges ?? EMPTY_FC)
+  }
+  if (update.parcelEdgeLabels !== undefined) {
+    setSourceData(map, FIT_SOURCE_IDS.parcelEdgeLabels, update.parcelEdgeLabels ?? EMPTY_FC)
   }
 }
 

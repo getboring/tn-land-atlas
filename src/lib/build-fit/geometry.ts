@@ -543,5 +543,101 @@ export function envelopeAreaSqft(envelope: PolygonOrMulti): number {
   return parcelAreaSqft(envelope)
 }
 
+// ── Phase 6b: parcel-edge feature builders ─────────────────────────────────
+// Each exterior-ring edge becomes one LineString feature with an
+// `edgeIndex` so click handlers can map clicks back to the corresponding
+// EdgeLabel entry. A separate midpoint Point feature carries the F/S/R/O
+// letter for the labels layer.
+
+import type { EdgeLabel, EdgeLabelKind } from './schemas'
+
+/**
+ * Build LineString features (one per exterior-ring edge) tagged with the
+ * edge's index in vertex order and the active label kind ('none' when
+ * unlabeled). MultiPolygon parcels label only the largest part — Phase 6
+ * works against the same `normalizeParcel().largest` ring everywhere.
+ */
+export function parcelEdgeLineFeatures(
+  parcel: PolygonOrMulti,
+  labels: EdgeLabel[],
+): GeoJSON.Feature<GeoJSON.LineString>[] {
+  const largest = parcel.type === 'Polygon' ? parcel : pickLargestPart(parcel)
+  if (!largest) return []
+  const ring = largest.coordinates[0]
+  if (!ring || ring.length < 4) return []
+  const labelByIndex = new Map<number, EdgeLabelKind>()
+  for (const e of labels) labelByIndex.set(e.edgeIndex, e.label)
+  const features: GeoJSON.Feature<GeoJSON.LineString>[] = []
+  for (let i = 0; i < ring.length - 1; i++) {
+    const a = ring[i]
+    const b = ring[i + 1]
+    if (!a || !b) continue
+    features.push({
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: [a, b] },
+      properties: {
+        edgeIndex: i,
+        label: labelByIndex.get(i) ?? 'none',
+      },
+    })
+  }
+  return features
+}
+
+/**
+ * Build midpoint Point features carrying the one-letter label (F/S/R/O)
+ * for each LABELED edge. Unlabeled edges produce no feature so the map
+ * stays clean.
+ */
+export function parcelEdgeLabelFeatures(
+  parcel: PolygonOrMulti,
+  labels: EdgeLabel[],
+): GeoJSON.Feature<GeoJSON.Point>[] {
+  const largest = parcel.type === 'Polygon' ? parcel : pickLargestPart(parcel)
+  if (!largest) return []
+  const ring = largest.coordinates[0]
+  if (!ring || ring.length < 4) return []
+  const features: GeoJSON.Feature<GeoJSON.Point>[] = []
+  for (const e of labels) {
+    if (e.edgeIndex < 0 || e.edgeIndex >= ring.length - 1) continue
+    const a = ring[e.edgeIndex]
+    const b = ring[e.edgeIndex + 1]
+    if (!a || !b) continue
+    const ax = a[0] ?? 0
+    const ay = a[1] ?? 0
+    const bx = b[0] ?? 0
+    const by = b[1] ?? 0
+    const mid: [number, number] = [(ax + bx) / 2, (ay + by) / 2]
+    const letter = e.label === 'front'
+      ? 'F'
+      : e.label === 'side'
+        ? 'S'
+        : e.label === 'rear'
+          ? 'R'
+          : 'O'
+    features.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: mid },
+      properties: { letter, label: e.label, edgeIndex: e.edgeIndex },
+    })
+  }
+  return features
+}
+
+/** Internal: pick the largest-by-area part of a MultiPolygon. */
+function pickLargestPart(geom: PolygonOrMulti): Polygon | null {
+  if (geom.type === 'Polygon') return geom
+  let best: Polygon | null = null
+  let bestArea = -Infinity
+  for (const partCoords of geom.coordinates) {
+    const a = area(turfPolygon(partCoords))
+    if (a > bestArea) {
+      bestArea = a
+      best = { type: 'Polygon', coordinates: partCoords }
+    }
+  }
+  return best
+}
+
 // Re-exports so consumers don't need separate imports.
 export type { Polygon, MultiPolygon, PolygonOrMulti } from './schemas'

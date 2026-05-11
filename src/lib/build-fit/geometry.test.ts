@@ -12,6 +12,8 @@ import {
   setbackEnvelope,
   envelopeAreaSqft,
   insetPolygonRing,
+  parcelEdgeLineFeatures,
+  parcelEdgeLabelFeatures,
   FEET_PER_METER,
   SQM_TO_SQFT,
 } from './geometry'
@@ -587,5 +589,95 @@ describe('setbackEnvelope (Phase 6a path)', () => {
     const env = setbackEnvelope(multi, 25)
     expect(env).not.toBeNull()
     expect(env?.type).toBe('Polygon') // tiny part dropped
+  })
+})
+
+// ── Phase 6b: parcel edge feature builders ─────────────────────────────────
+
+describe('parcelEdgeLineFeatures', () => {
+  it('emits one LineString per exterior edge of a Polygon parcel', () => {
+    const parcel = smallParcel() // 4 corners + closing duplicate = 4 edges
+    const features = parcelEdgeLineFeatures(parcel, [])
+    expect(features).toHaveLength(4)
+    expect(features[0]?.geometry.type).toBe('LineString')
+    expect(features[0]?.properties?.edgeIndex).toBe(0)
+    expect(features[0]?.properties?.label).toBe('none')
+    expect(features[3]?.properties?.edgeIndex).toBe(3)
+  })
+
+  it("tags edges with their applied label (front / side / rear / other)", () => {
+    const parcel = smallParcel()
+    const features = parcelEdgeLineFeatures(parcel, [
+      { edgeIndex: 0, label: 'front' },
+      { edgeIndex: 2, label: 'rear' },
+    ])
+    expect(features[0]?.properties?.label).toBe('front')
+    expect(features[1]?.properties?.label).toBe('none')
+    expect(features[2]?.properties?.label).toBe('rear')
+    expect(features[3]?.properties?.label).toBe('none')
+  })
+
+  it('targets the largest part of a MultiPolygon parcel', () => {
+    // Two non-overlapping parts; the larger one should source the edges.
+    const big = smallParcel().coordinates
+    const lng = TN_CENTER[0] + 0.05
+    const lat = TN_CENTER[1]
+    const halfM = 5
+    const dLat = halfM / 111_320
+    const dLng = halfM / (111_320 * Math.cos((lat * Math.PI) / 180))
+    const tiny: number[][][] = [
+      [
+        [lng - dLng, lat - dLat],
+        [lng + dLng, lat - dLat],
+        [lng + dLng, lat + dLat],
+        [lng - dLng, lat + dLat],
+        [lng - dLng, lat - dLat],
+      ],
+    ]
+    const multi = { type: 'MultiPolygon' as const, coordinates: [tiny, big] }
+    const features = parcelEdgeLineFeatures(multi, [])
+    // Big has 4 edges. If we'd accidentally sourced from tiny, edges
+    // would also be 4 but coordinates would differ. Check the first edge
+    // origin is near TN_CENTER (big), not near +0.05 lng (tiny).
+    const firstEdge = features[0]?.geometry.coordinates[0]
+    expect(firstEdge?.[0]).toBeLessThan(-82.2) // big sits near -82.35
+  })
+
+  it('returns [] for malformed input', () => {
+    expect(parcelEdgeLineFeatures({ type: 'Polygon', coordinates: [[]] }, [])).toEqual([])
+  })
+})
+
+describe('parcelEdgeLabelFeatures', () => {
+  it('emits Point features only for LABELED edges', () => {
+    const parcel = smallParcel()
+    const features = parcelEdgeLabelFeatures(parcel, [
+      { edgeIndex: 0, label: 'front' },
+      { edgeIndex: 2, label: 'rear' },
+    ])
+    expect(features).toHaveLength(2)
+    expect(features[0]?.properties?.letter).toBe('F')
+    expect(features[1]?.properties?.letter).toBe('R')
+  })
+
+  it('skips invalid edge indices', () => {
+    const parcel = smallParcel() // 4 edges, valid indices 0..3
+    const features = parcelEdgeLabelFeatures(parcel, [
+      { edgeIndex: 0, label: 'front' },
+      { edgeIndex: 99, label: 'rear' }, // out of range; ignored
+      { edgeIndex: -1, label: 'side' }, // out of range; ignored
+    ])
+    expect(features).toHaveLength(1)
+  })
+
+  it('places the Point at the edge midpoint', () => {
+    const parcel = smallParcel()
+    const features = parcelEdgeLabelFeatures(parcel, [{ edgeIndex: 0, label: 'front' }])
+    const ring = parcel.coordinates[0] as number[][]
+    const a = ring[0]!
+    const b = ring[1]!
+    const expectedMid = [(a[0]! + b[0]!) / 2, (a[1]! + b[1]!) / 2]
+    expect(features[0]?.geometry.coordinates[0]).toBeCloseTo(expectedMid[0]!, 6)
+    expect(features[0]?.geometry.coordinates[1]).toBeCloseTo(expectedMid[1]!, 6)
   })
 })
